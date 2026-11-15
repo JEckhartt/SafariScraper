@@ -1,0 +1,75 @@
+# XcodeGen spec — CI turns this into SafariScraper.xcodeproj (no Mac needed locally).
+name: SafariScraper
+options:
+  deploymentTarget:
+    iOS: "15.4" # first iOS with Manifest V3 Safari extensions
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  SafariScraper:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: SafariScraper
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSPhotoLibraryAddUsageDescription: SafariScraper saves the images you pick in Safari to your photo library.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.safariscraper.app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: SafariScraperExtension
+        embed: true
+
+  SafariScraperExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extension/SafariWebExtensionHandler.swift
+      # Copied flat into the .appex root, which is where Safari looks for manifest.json.
+      - path: Extension/Resources
+        buildPhase: resources
+    info:
+      path: Extension/Info.plist
+      properties:
+        CFBundleDisplayName: SafariScraper
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSPhotoLibraryAddUsageDescription: SafariScraper saves the images you pick in Safari to your photo library.
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.safariscraper.app.extension
+        APPLICATION_EXTENSION_API_ONLY: "YES"

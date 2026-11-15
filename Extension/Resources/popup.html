@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SafariScraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="row">
+      <strong id="count">Scanning…</strong>
+      <button id="rescan" class="ghost" title="Scroll the page to load lazy images, then rescan">Scroll &amp; rescan</button>
+    </div>
+    <div class="row">
+      <label>Min size
+        <select id="minSize">
+          <option value="0">Any</option>
+          <option value="100">100px</option>
+          <option value="300" selected>300px</option>
+          <option value="600">600px</option>
+          <option value="1000">1000px</option>
+        </select>
+      </label>
+      <span class="spacer"></span>
+      <button id="selAll" class="ghost">All</button>
+      <button id="selNone" class="ghost">None</button>
+    </div>
+  </header>
+
+  <main id="grid"></main>
+
+  <footer>
+    <div id="status" aria-live="polite"></div>
+    <progress id="progress" value="0" max="1" hidden></progress>
+    <div class="row actions">
+      <button id="savePhotos" class="primary">Save to Photos</button>
+      <button id="share">Share…</button>
+      <button id="zip">Zip</button>
+    </div>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
