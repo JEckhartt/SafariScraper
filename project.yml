@@ -50,6 +50,8 @@ targets:
     dependencies:
       - target: SafariScraperExtension
         embed: true
+      - target: CardScraperExtension
+        embed: true
 
   SafariScraperExtension:
     type: app-extension
@@ -72,4 +74,25 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.safariscraper.app.extension
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+
+  CardScraperExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: CardExtension/SafariWebExtensionHandler.swift
+      - path: CardExtension/Resources
+        buildPhase: resources
+    info:
+      path: CardExtension/Info.plist
+      properties:
+        CFBundleDisplayName: CardScraper
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.safariscraper.app.card
         APPLICATION_EXTENSION_API_ONLY: "YES"

@@ -1,6 +1,9 @@
 # SafariScraper
 
-A Safari extension for iPhone/iPad that finds every image on a page and saves them in bulk to Photos, through the share sheet, or as a zip.
+Two Safari extensions for iPhone/iPad in one app:
+
+- **SafariScraper**: finds every image on a page and saves them in bulk to Photos, through the share sheet, or as a zip.
+- **CardScraper**: turns a character page into a Tavern/SillyTavern **character card PNG**: the main image with Scenario, Personality, First message and Example dialogs embedded.
 
 No Mac required: GitHub Actions builds an unsigned `.ipa` that you install with TrollStore, or sign with Sideloadly, AltStore, or your own certificate.
 
@@ -28,7 +31,19 @@ In Safari, tap the puzzle-piece / **ᴀA** button → **SafariScraper**.
 
 If the share sheet doesn't open after a big download, the button changes to "Share N now". Tap it again; iOS only allows the share sheet right after a tap.
 
-## What it finds
+## CardScraper
+
+Open a character page → extensions menu → **CardScraper**.
+
+- Picks the largest image on screen (tap a thumbnail to choose another) and converts it to PNG.
+- Finds sections by their headings: *Scenario*, *Personality*, *First message*, *Example dialogs*. Token counts like "(310 tokens)" are ignored, and collapsed sections still get read.
+- Every field is editable before saving. Missing ones are flagged so you can paste them in.
+- **Save card PNG** writes the card JSON (V2 spec, V1 fields mirrored) base64-encoded into a `tEXt` chunk named `chara`. That's what SillyTavern, Agnai, RisuAI and others import. **JSON** saves the same data as a `.json` file.
+- By default Personality is stored in the card's `description` field, which is the main character definition in SillyTavern. Untick the box to store it in `personality` instead.
+
+Save it with **Save to Files**, not Photos: Photos can strip the embedded text.
+
+## What SafariScraper finds
 
 `<img>` (largest `srcset` candidate), lazy-load attributes (`data-src`, `data-original`, `data-lazy-src`, …), `<picture>` sources, links that point at image files, CSS background images, video posters and `og:image` / `twitter:image`.
 
@@ -43,6 +58,10 @@ Extension/
     popup.{html,css,js}       picker UI
     background.js             relays to native handler
     zip.js                    tiny store-only zip writer
+CardExtension/
+  Resources/                  CardScraper web extension
+    content.js                image + section scraper
+    png.js                    PNG tEXt "chara" card writer
 project.yml                   XcodeGen spec (CI generates the .xcodeproj)
 .github/workflows/build.yml   builds + fake-signs (ldid) the IPA
 scripts/make_icons.py         regenerates icons

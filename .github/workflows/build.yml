@@ -44,11 +44,16 @@ jobs:
             test -f "$APPEX/$f" || { echo "::error::missing $f in appex"; exit 1; }
           done
           plutil -p "$APPEX/Info.plist"
+          CARD="$APP/PlugIns/CardScraperExtension.appex"
+          for f in manifest.json popup.html popup.js content.js png.js icon-128.png; do
+            test -f "$CARD/$f" || { echo "::error::missing $f in card appex"; exit 1; }
+          done
 
       - name: Fake-sign (ldid) and package IPA
         run: |
           APP=build/Release-iphoneos/SafariScraper.app
           ldid -S "$APP/PlugIns/SafariScraperExtension.appex/SafariScraperExtension"
+          ldid -S "$APP/PlugIns/CardScraperExtension.appex/CardScraperExtension"
           ldid -S "$APP/SafariScraper"
           rm -rf Payload && mkdir Payload
           cp -R "$APP" Payload/

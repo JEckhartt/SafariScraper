@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CardScraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <div class="hero">
+      <img id="preview" alt="">
+      <div class="hero-side">
+        <label class="lbl" for="name">Name</label>
+        <input id="name" autocomplete="off">
+        <div id="imgInfo" class="muted"></div>
+      </div>
+    </div>
+    <div id="thumbs" class="thumbs" aria-label="Other images"></div>
+
+    <section>
+      <label class="lbl" for="scenario">Scenario <span class="count" data-for="scenario"></span></label>
+      <textarea id="scenario" rows="5"></textarea>
+    </section>
+    <section>
+      <label class="lbl" for="personality">Personality <span class="count" data-for="personality"></span></label>
+      <textarea id="personality" rows="7"></textarea>
+      <label class="check"><input type="checkbox" id="persAsDesc" checked> Store as Description (what SillyTavern shows as the main definition)</label>
+    </section>
+    <section>
+      <label class="lbl" for="first_mes">First message <span class="count" data-for="first_mes"></span></label>
+      <textarea id="first_mes" rows="6"></textarea>
+    </section>
+    <section>
+      <label class="lbl" for="mes_example">Example dialogs <span class="count" data-for="mes_example"></span></label>
+      <textarea id="mes_example" rows="6"></textarea>
+    </section>
+  </main>
+
+  <footer>
+    <div id="status" aria-live="polite"></div>
+    <div class="row">
+      <button id="savePng" class="primary">Save card PNG</button>
+      <button id="saveJson">JSON</button>
+    </div>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

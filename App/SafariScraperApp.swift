@@ -36,7 +36,7 @@ struct ContentView: View {
 
                 Section("Turn on the extension") {
                     step(1, "Open **Settings → Safari → Extensions** (iOS 18+: **Settings → Apps → Safari → Extensions**).")
-                    step(2, "Tap **SafariScraper** and switch it on.")
+                    step(2, "Switch on **SafariScraper** (bulk images) and/or **CardScraper** (character cards).")
                     step(3, "Set **All Websites** to **Allow** (or approve sites one at a time).")
                     Button("Open Settings") { openSettings() }
                 }
@@ -46,6 +46,12 @@ struct ContentView: View {
                     step(2, "Tap **SafariScraper**. Every image on the page shows up in a grid.")
                     step(3, "Filter by size, tap to deselect any you don't want, then **Save to Photos**.")
                     step(4, "Use **Scroll & rescan** on pages that lazy-load images as you scroll.")
+                }
+
+                Section("CardScraper") {
+                    step(1, "Open a character page and tap **CardScraper** in the extensions menu.")
+                    step(2, "It grabs the main image plus Scenario, Personality, First message and Example dialogs. Edit anything that's off.")
+                    step(3, "Tap **Save card PNG** → **Save to Files**. The text is embedded in the PNG (Tavern card V2), ready to import.")
                 }
 
                 Section {
