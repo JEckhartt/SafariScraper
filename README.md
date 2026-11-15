@@ -38,6 +38,7 @@ Open a character page → extensions menu → **CardScraper**.
 - Picks the largest image on screen (tap a thumbnail to choose another) and converts it to PNG.
 - Grabs the **public description** (the text block under the image) into `creator_notes`, which SillyTavern shows as Creator's Notes.
 - Finds sections by their headings: *Scenario*, *Personality*, *First message*, *Example dialogs*. Token counts like "(310 tokens)" are ignored, and collapsed sections still get read.
+- Converts the page's formatting back to **Markdown**: *italics* (roleplay actions), **bold**, ~~strike~~, headings, nested lists, quotes, code blocks, links, rules and tables. Untick "Keep formatting as Markdown" for plain text.
 - Every field is editable before saving. Missing ones are flagged so you can paste them in.
 - **Save card PNG** writes the card JSON (V2 spec, V1 fields mirrored) base64-encoded into a `tEXt` chunk named `chara`. That's what SillyTavern, Agnai, RisuAI and others import. **JSON** saves the same data as a `.json` file.
 - By default Personality is stored in the card's `description` field, which is the main character definition in SillyTavern. Untick the box to store it in `personality` instead.

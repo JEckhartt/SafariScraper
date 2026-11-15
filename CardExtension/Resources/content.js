@@ -70,43 +70,170 @@
     return out;
   }
 
-  function contentAfter(heading, allHeadingEls) {
+  // Nodes (elements and bare text) that make up a section's body.
+  function contentNodesAfter(heading, allHeadingEls) {
     const isHeadingOrHasHeading = (n) =>
-      allHeadingEls.some((h) => h !== heading && (n === h || n.contains(h)));
+      n.nodeType === 1 && allHeadingEls.some((h) => h !== heading && (n === h || n.contains(h)));
 
     let node = heading;
     for (let depth = 0; depth < 6 && node && node !== document.body; depth++) {
-      const parts = [];
-      for (let sib = node.nextElementSibling; sib; sib = sib.nextElementSibling) {
+      const nodes = [];
+      for (let sib = node.nextSibling; sib; sib = sib.nextSibling) {
         if (isHeadingOrHasHeading(sib)) break;
-        const t = textOf(sib);
-        if (t && t.trim()) parts.push(t);
+        if (sib.nodeType === 1 || sib.nodeType === 3) nodes.push(sib);
       }
-      const text = tidy(parts.join("\n"));
-      if (text) return text;
+      if (nodes.some((n) => n.textContent.trim())) return nodes;
       // Nothing after us at this level: the heading probably sits in its own
       // header wrapper, so climb out of it (unless that would swallow another section).
       const parent = node.parentElement;
       if (!parent || isHeadingOrHasHeading(parent)) break;
       node = parent;
     }
-    return "";
+    return [];
   }
+
+  const plainOf = (nodes) => tidy(nodes.map((n) => (n.nodeType === 3 ? n.textContent : textOf(n))).join("\n"));
+  const markdownOf = (nodes) => toMarkdown(nodes);
 
   function scrapeText(mainImg) {
     const headings = findHeadings();
     const els = headings.map((h) => h.el);
-    const fields = {};
+    const plain = {}, md = {};
     const firstSection = headings.find((h) => h.key !== "creator_notes")?.el;
     for (const h of headings) {
-      if (fields[h.key]) continue; // first occurrence wins
-      const text = contentAfter(h.el, els);
-      if (text) fields[h.key] = text;
+      if (plain[h.key]) continue; // first occurrence wins
+      const nodes = contentNodesAfter(h.el, els);
+      const text = plainOf(nodes);
+      if (text) {
+        plain[h.key] = text;
+        md[h.key] = markdownOf(nodes) || text;
+      }
     }
-    if (!fields.creator_notes) {
-      fields.creator_notes = descriptionNear(mainImg, firstSection) || metaDescription();
+    if (!plain.creator_notes) {
+      const node = descriptionNear(mainImg, firstSection);
+      if (node) {
+        plain.creator_notes = plainOf([node]);
+        md.creator_notes = markdownOf([node]) || plain.creator_notes;
+      } else {
+        plain.creator_notes = md.creator_notes = metaDescription();
+      }
     }
-    return fields;
+    return { plain, md };
+  }
+
+  // ---------- HTML -> Markdown ----------
+  const MD_SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "BUTTON", "SVG", "INPUT", "SELECT", "TEXTAREA", "IFRAME", "CANVAS", "VIDEO", "AUDIO", "IMG", "PICTURE", "TEMPLATE"]);
+  const BLOCKISH = new Set(["DIV", "SECTION", "ARTICLE", "MAIN", "ASIDE", "HEADER", "FOOTER", "FIGURE", "FIGCAPTION", "DL", "DT", "DD", "FORM", "FIELDSET", "DETAILS", "SUMMARY", "CENTER", "ADDRESS"]);
+
+  function wrapInline(marker, inner) {
+    if (!inner.trim()) return inner;
+    const lead = inner.match(/^\s*/)[0];
+    const trail = inner.match(/\s*$/)[0];
+    const core = inner.trim();
+    // Don't double up if the site already shows the literal markers.
+    if (core.startsWith(marker) && core.endsWith(marker) && core.length > marker.length * 2) return inner;
+    return `${lead}${marker}${core}${marker}${trail}`;
+  }
+
+  function styleMarkers(el) {
+    // Sites sometimes style spans instead of using <em>/<strong>.
+    const st = el.getAttribute("style") || "";
+    let m = "";
+    if (/font-weight\s*:\s*(bold|[6-9]00)/i.test(st)) m += "**";
+    if (/font-style\s*:\s*italic/i.test(st)) m += "*";
+    return m;
+  }
+
+  function mdNode(node, ctx) {
+    if (node.nodeType === 3) {
+      return ctx.pre ? node.textContent : node.textContent.replace(/[ \t\r\n\u00a0]+/g, " ");
+    }
+    if (node.nodeType !== 1) return "";
+    const tag = node.tagName.toUpperCase();
+    if (MD_SKIP.has(tag)) return "";
+    if (node.getAttribute("aria-hidden") === "true") return "";
+
+    const kids = (c = ctx) => [...node.childNodes].map((n) => mdNode(n, c)).join("");
+
+    switch (tag) {
+      case "BR": return "\n";
+      case "HR": return "\n\n---\n\n";
+      case "P": return `\n\n${kids().trim()}\n\n`;
+      case "H1": case "H2": case "H3": case "H4": case "H5": case "H6": {
+        const t = kids().trim();
+        return t ? `\n\n${"#".repeat(+tag[1])} ${t}\n\n` : "";
+      }
+      case "STRONG": case "B": return wrapInline("**", kids());
+      case "EM": case "I": case "CITE": case "DFN": return wrapInline("*", kids());
+      case "DEL": case "S": case "STRIKE": return wrapInline("~~", kids());
+      case "CODE": return ctx.pre ? kids() : wrapInline("`", kids());
+      case "PRE": {
+        const t = kids({ ...ctx, pre: true }).replace(/\n+$/, "");
+        return `\n\n\`\`\`\n${t}\n\`\`\`\n\n`;
+      }
+      case "BLOCKQUOTE": {
+        const t = tidyMd(kids());
+        return t ? `\n\n${t.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n")}\n\n` : "";
+      }
+      case "UL": case "OL": {
+        const ordered = tag === "OL";
+        let i = Number(node.getAttribute("start")) || 1;
+        const items = [];
+        for (const li of node.children) {
+          if (li.tagName.toUpperCase() !== "LI") continue;
+          const bullet = ordered ? `${i++}. ` : "- ";
+          const body = tidyMd([...li.childNodes].map((n) => mdNode(n, ctx)).join(""))
+            .replace(/\n{2,}(?=[ \t]*(?:[-*+]|\d+\.) )/g, "\n"); // keep nested lists tight
+          const pad = " ".repeat(bullet.length);
+          items.push(bullet + body.split("\n").map((l, j) => (j && l ? pad + l : l)).join("\n"));
+        }
+        return items.length ? `\n\n${items.join("\n")}\n\n` : "";
+      }
+      case "LI": return `\n- ${kids().trim()}\n`; // stray <li> outside a list
+      case "A": {
+        const t = kids();
+        const href = node.getAttribute("href");
+        if (!href || href.startsWith("#") || href.startsWith("javascript:") || !t.trim()) return t;
+        let url;
+        try { url = new URL(href, document.baseURI).href; } catch { return t; }
+        return t.trim() === url ? url : `[${t.trim()}](${url})`;
+      }
+      case "TABLE": {
+        const rows = [...node.querySelectorAll("tr")].map((tr) =>
+          "| " + [...tr.children].map((c) => tidyMd(mdNode(c, ctx)).replace(/\n/g, " ")).join(" | ") + " |");
+        if (!rows.length) return "";
+        const cols = node.querySelector("tr").children.length;
+        rows.splice(1, 0, "|" + " --- |".repeat(cols));
+        return `\n\n${rows.join("\n")}\n\n`;
+      }
+      case "TD": case "TH": return kids();
+      default: {
+        const m = styleMarkers(node);
+        let t = kids();
+        if (m) t = wrapInline(m, t);
+        return BLOCKISH.has(tag) ? `\n${t}\n` : t;
+      }
+    }
+  }
+
+  // Normalise blank lines/indentation, leaving fenced code blocks untouched.
+  function tidyMd(s) {
+    return s
+      .split(/(```[\s\S]*?\n```)/)
+      .map((part, i) =>
+        i % 2
+          ? part
+          : part
+              .replace(/[ \t]+\n/g, "\n")
+              .replace(/\n[ \t]+(?![ \t]|(?:[-*+]|\d+\.) )/g, "\n")
+              .replace(/^[ \t]+/, "")
+              .replace(/\n{3,}/g, "\n\n"))
+      .join("")
+      .trim();
+  }
+
+  function toMarkdown(nodes) {
+    return tidyMd(nodes.map((n) => mdNode(n, { pre: false })).join("\n"));
   }
 
   function bestFromSrcset(srcset) {
@@ -158,7 +285,7 @@
   const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "BUTTON", "NAV", "INPUT", "TEXTAREA", "SELECT", "SVG", "IMG", "HEADER", "FOOTER"]);
 
   function descriptionNear(imgEl, stopEl) {
-    if (!imgEl) return "";
+    if (!imgEl) return null;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
     walker.currentNode = imgEl;
     const cands = [];
@@ -173,12 +300,12 @@
       const len = clean(n.textContent).length;
       if (len >= 40) cands.push({ n, len });
     }
-    if (!cands.length) return "";
+    if (!cands.length) return null;
     const max = Math.max(...cands.map((c) => c.len));
     // Deepest element that still holds (nearly) all of the biggest block.
     const good = cands.filter((c) => c.len >= max * 0.85);
     const best = good.reduce((a, b) => (a.n.contains(b.n) ? b : a));
-    return tidy(textOf(best.n));
+    return best.n;
   }
 
   function metaDescription() {
@@ -203,9 +330,11 @@
     if (msg?.type !== "card") return;
     const images = scrapeImages();
     const mainImg = images.find((i) => i.el)?.el || null;
+    const { plain, md } = scrapeText(mainImg);
     sendResponse({
       name: scrapeName(),
-      fields: scrapeText(mainImg),
+      fields: md,
+      plainFields: plain,
       images: images.map(({ el, ...rest }) => rest),
       url: location.href,
     });

@@ -4,7 +4,7 @@ const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
 const FIELD_IDS = ["creator_notes", "scenario", "personality", "first_mes", "mes_example"];
 
-const state = { tab: null, url: "", images: [], imageIndex: 0, prepared: null };
+const state = { tab: null, url: "", images: [], imageIndex: 0, prepared: null, md: {}, plain: {}, edited: false };
 
 function setStatus(text, isError = false) {
   $("status").textContent = text;
@@ -67,7 +67,9 @@ async function scrape() {
   state.url = res.url;
   state.images = res.images || [];
   $("name").value = res.name || "";
-  for (const id of FIELD_IDS) $(id).value = res.fields?.[id] || "";
+  state.md = res.fields || {};
+  state.plain = res.plainFields || res.fields || {};
+  fillFields();
   renderThumbs();
   selectImage(0);
   updateCounts();
@@ -80,6 +82,14 @@ async function scrape() {
   } else {
     setStatus("Everything found. Check it over, then save.");
   }
+}
+
+function fillFields() {
+  const src = $("keepMd").checked ? state.md : state.plain;
+  for (const id of FIELD_IDS) $(id).value = src[id] || "";
+  state.edited = false;
+  updateCounts();
+  invalidate();
 }
 
 function currentCard() {
@@ -193,8 +203,15 @@ async function deliver(kind, buttonId, build) {
 $("savePng").addEventListener("click", () => deliver("png", "savePng", buildPngFile));
 $("saveJson").addEventListener("click", () => deliver("json", "saveJson", async () => buildJsonFile()));
 for (const id of [...FIELD_IDS, "name"]) {
-  $(id).addEventListener("input", () => { invalidate(); updateCounts(); });
+  $(id).addEventListener("input", () => { state.edited ||= id !== "name"; invalidate(); updateCounts(); });
 }
 $("persAsDesc").addEventListener("change", invalidate);
+$("keepMd").addEventListener("change", (e) => {
+  if (state.edited && !confirm("Switching formatting reloads the text from the page and discards your edits. Continue?")) {
+    e.target.checked = !e.target.checked;
+    return;
+  }
+  fillFields();
+});
 
 scrape().catch((e) => setStatus(e.message || String(e), true));
