@@ -10,6 +10,7 @@
     { key: "scenario", re: /^scenario$/i },
     { key: "personality", re: /^(personality|personality summary|character personality)$/i },
     { key: "first_mes", re: /^(first message|first mes|greeting|intro message|initial message)$/i },
+    { key: "creator_notes", re: /^(public description|description|about|about me|bio|tagline|overview|creator'?s? notes?)$/i },
     { key: "mes_example", re: /^(example dialog(ue)?s?|example messages?|example chats?|dialog(ue)? examples?)$/i },
   ];
 
@@ -92,14 +93,18 @@
     return "";
   }
 
-  function scrapeText() {
+  function scrapeText(mainImg) {
     const headings = findHeadings();
     const els = headings.map((h) => h.el);
     const fields = {};
+    const firstSection = headings.find((h) => h.key !== "creator_notes")?.el;
     for (const h of headings) {
       if (fields[h.key]) continue; // first occurrence wins
       const text = contentAfter(h.el, els);
       if (text) fields[h.key] = text;
+    }
+    if (!fields.creator_notes) {
+      fields.creator_notes = descriptionNear(mainImg, firstSection) || metaDescription();
     }
     return fields;
   }
@@ -128,24 +133,57 @@
   function scrapeImages() {
     const list = [];
     const seen = new Set();
-    const push = (url, w, h, displayed) => {
+    const push = (url, w, h, displayed, el = null) => {
       url = abs(url);
       if (!url || seen.has(url)) return;
       seen.add(url);
-      list.push({ url, width: w, height: h, displayed });
+      list.push({ url, width: w, height: h, displayed, el });
     };
     for (const img of document.images) {
       const w = img.naturalWidth, h = img.naturalHeight;
       if (w * h < 100 * 100) continue;
       const r = img.getBoundingClientRect();
       const displayed = Math.round(r.width * r.height);
-      push(bestFromSrcset(img.getAttribute("srcset")) || img.currentSrc || img.src, w, h, displayed);
+      push(bestFromSrcset(img.getAttribute("srcset")) || img.currentSrc || img.src, w, h, displayed, img);
     }
     const og = document.querySelector('meta[property="og:image"]')?.getAttribute("content");
     if (og) push(og, 0, 0, 0);
     // Largest on screen first, then largest natural size.
     list.sort((a, b) => b.displayed - a.displayed || b.width * b.height - a.width * a.height);
     return list.slice(0, 12);
+  }
+
+  // The public description: the biggest block of text between the main image
+  // and the first definition section (Scenario, Personality, …).
+  const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "BUTTON", "NAV", "INPUT", "TEXTAREA", "SELECT", "SVG", "IMG", "HEADER", "FOOTER"]);
+
+  function descriptionNear(imgEl, stopEl) {
+    if (!imgEl) return "";
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    walker.currentNode = imgEl;
+    const cands = [];
+    let n, steps = 0;
+    while ((n = walker.nextNode()) && steps++ < 6000) {
+      if (stopEl && (n === stopEl || n.contains(stopEl))) {
+        if (n === stopEl) break;
+        continue; // ancestor of the stop heading: too big, but keep walking into it
+      }
+      if (SKIP.has(n.tagName) || n.closest("button, nav, a[href], [role=button]")) continue;
+      if (n.getClientRects().length === 0) continue;
+      const len = clean(n.textContent).length;
+      if (len >= 40) cands.push({ n, len });
+    }
+    if (!cands.length) return "";
+    const max = Math.max(...cands.map((c) => c.len));
+    // Deepest element that still holds (nearly) all of the biggest block.
+    const good = cands.filter((c) => c.len >= max * 0.85);
+    const best = good.reduce((a, b) => (a.n.contains(b.n) ? b : a));
+    return tidy(textOf(best.n));
+  }
+
+  function metaDescription() {
+    const m = document.querySelector('meta[property="og:description"], meta[name="description"]');
+    return tidy(m?.getAttribute("content") || "");
   }
 
   function scrapeName() {
@@ -163,10 +201,12 @@
 
   api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type !== "card") return;
+    const images = scrapeImages();
+    const mainImg = images.find((i) => i.el)?.el || null;
     sendResponse({
       name: scrapeName(),
-      fields: scrapeText(),
-      images: scrapeImages(),
+      fields: scrapeText(mainImg),
+      images: images.map(({ el, ...rest }) => rest),
       url: location.href,
     });
   });

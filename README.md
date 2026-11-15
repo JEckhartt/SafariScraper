@@ -36,6 +36,7 @@ If the share sheet doesn't open after a big download, the button changes to "Sha
 Open a character page → extensions menu → **CardScraper**.
 
 - Picks the largest image on screen (tap a thumbnail to choose another) and converts it to PNG.
+- Grabs the **public description** (the text block under the image) into `creator_notes`, which SillyTavern shows as Creator's Notes.
 - Finds sections by their headings: *Scenario*, *Personality*, *First message*, *Example dialogs*. Token counts like "(310 tokens)" are ignored, and collapsed sections still get read.
 - Every field is editable before saving. Missing ones are flagged so you can paste them in.
 - **Save card PNG** writes the card JSON (V2 spec, V1 fields mirrored) base64-encoded into a `tEXt` chunk named `chara`. That's what SillyTavern, Agnai, RisuAI and others import. **JSON** saves the same data as a `.json` file.

@@ -2,7 +2,7 @@ import { buildCard, embedCard, isPng } from "./png.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
-const FIELD_IDS = ["scenario", "personality", "first_mes", "mes_example"];
+const FIELD_IDS = ["creator_notes", "scenario", "personality", "first_mes", "mes_example"];
 
 const state = { tab: null, url: "", images: [], imageIndex: 0, prepared: null };
 
@@ -78,7 +78,7 @@ async function scrape() {
   } else if (missing.length) {
     setStatus(`Missing: ${missing.map((m) => document.querySelector(`label[for=${m}]`).firstChild.textContent.trim()).join(", ")}. You can type or paste them in.`);
   } else {
-    setStatus("All four sections found. Check them over, then save.");
+    setStatus("Everything found. Check it over, then save.");
   }
 }
 
@@ -92,6 +92,7 @@ function currentCard() {
     scenario: $("scenario").value.trim(),
     first_mes: $("first_mes").value.trim(),
     mes_example: $("mes_example").value.trim(),
+    creator_notes: $("creator_notes").value.trim(),
     source: state.url,
   });
 }
