@@ -6,6 +6,7 @@ No Mac required: GitHub Actions builds an unsigned `.ipa` that you install with 
 
 ## Get the IPA
 
+- **Direct link (always the newest build):** https://github.com/JEckhartt/SafariScraper/releases/download/latest/SafariScraper.ipa
 - **Any push:** open the **Actions** tab → latest **Build IPA** run → download the `SafariScraper-ipa` artifact (a zip containing `SafariScraper.ipa`).
 - **Release (easier from a phone):** on GitHub go to **Releases → Draft a new release**, create a tag such as `v1.0`, and publish. The workflow attaches `SafariScraper.ipa` to the release.
 

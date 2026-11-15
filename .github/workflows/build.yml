@@ -60,8 +60,22 @@ jobs:
           name: SafariScraper-ipa
           path: SafariScraper.ipa
 
+      # Rolling "latest" release so there's always a direct, login-free link:
+      # https://github.com/<owner>/<repo>/releases/download/latest/SafariScraper.ipa
+      - name: Publish rolling "latest" release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest SafariScraper.ipa \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Latest build" \
+            --notes "Built from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Direct download: SafariScraper.ipa"
+
       - name: Attach to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && github.event.release.tag_name != 'latest'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" SafariScraper.ipa --clobber
