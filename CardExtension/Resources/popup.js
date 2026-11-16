@@ -1,5 +1,5 @@
 import { buildCard, embedCard, isPng } from "./png.js";
-import { initChat, loadChat, probeChat, chatFile, chatLoaded } from "./chat.js";
+import { initChat, loadChat, probeChat, chatFile, chatLoaded, debugFile } from "./chat.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
@@ -25,6 +25,7 @@ function invalidate() {
   $("savePng").textContent = "Save card PNG";
   $("saveJson").textContent = "JSON";
   $("saveChat").textContent = "Save chat (.jsonl)";
+  $("debugChat").textContent = "Debug file";
 }
 
 function showTab(name) {
@@ -182,7 +183,9 @@ function download(file) {
 
 // Share sheet needs a fresh tap; if building took too long, keep the file and ask for a second tap.
 async function deliver(kind, buttonId, build) {
-  const btns = [$("savePng"), $("saveJson"), $("saveChat")];
+  const btns = [$("savePng"), $("saveJson"), $("saveChat"), $("debugChat")];
+  const was = btns.map((b) => b.disabled);
+  const restore = () => btns.forEach((b, i) => (b.disabled = was[i]));
   try {
     let file;
     if (state.prepared?.kind === kind) {
@@ -190,7 +193,7 @@ async function deliver(kind, buttonId, build) {
     } else {
       btns.forEach((b) => (b.disabled = true));
       file = await build();
-      btns.forEach((b) => (b.disabled = false));
+      restore();
     }
     if (!navigator.canShare?.({ files: [file] })) {
       download(file);
@@ -208,7 +211,7 @@ async function deliver(kind, buttonId, build) {
       setStatus("Ready. Tap the button again to open the share sheet (choose Save to Files).");
     }
   } catch (e) {
-    btns.forEach((b) => (b.disabled = false));
+    restore();
     setStatus(e.message || String(e), true);
   }
 }
@@ -228,6 +231,7 @@ $("keepMd").addEventListener("change", (e) => {
 });
 
 $("saveChat").addEventListener("click", () => deliver("chat", "saveChat", async () => chatFile()));
+$("debugChat").addEventListener("click", () => deliver("debug", "debugChat", debugFile));
 for (const b of document.querySelectorAll(".tabs button")) b.addEventListener("click", () => showTab(b.dataset.tab));
 initChat();
 

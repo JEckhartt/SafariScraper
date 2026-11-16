@@ -233,6 +233,11 @@ export function chatFile() {
 
 export function chatLoaded() { return chat.loaded; }
 
+export async function debugFile() {
+  const res = await send({ type: "chatDebug" });
+  return new File([res?.text || "no response"], "cardscraper-debug.txt", { type: "text/plain" });
+}
+
 export function initChat() {
   for (const id of ["chatChar", "chatUser"]) {
     $(id).addEventListener("input", (e) => { e.target.dataset.touched = "1"; render(); });

@@ -363,27 +363,43 @@
     return el.tagName + "." + cls;
   }
 
-  function findChatContainer() {
-    let best = null, bestScore = 0;
+  const TEXT_BLOCKS = new Set(["P", "LI", "BLOCKQUOTE", "H1", "H2", "H3", "H4", "H5", "H6", "PRE", "SPAN", "EM", "STRONG", "B", "I", "BR", "HR", "TD", "TR", "DT", "DD"]);
+
+  // Score every element as a possible message list. Real message lists have
+  // children that carry a speaker (avatar and/or name label); the paragraphs
+  // inside one long message don't, so they can't win anymore.
+  function chatCandidates() {
+    const out = [];
     for (const el of document.body.querySelectorAll("*")) {
-      if (el.childElementCount < 2 || MD_SKIP.has(el.tagName) || el.closest(NAV_LIKE)) continue;
+      if (el.childElementCount < 2 || MD_SKIP.has(el.tagName) || TEXT_BLOCKS.has(el.tagName) || el.closest(NAV_LIKE)) continue;
       const kids = [...el.children].filter((k) => clean(k.textContent).length >= 2 && k.getClientRects().length);
       if (kids.length < 2) continue;
+      // The paragraphs of a message, not messages.
+      const textish = kids.filter((k) => TEXT_BLOCKS.has(k.tagName)).length;
+      if (textish / kids.length > 0.5) continue;
+      const avgLen = kids.reduce((n, k) => n + clean(k.textContent).length, 0) / kids.length;
+      if (avgLen < 12) continue; // menus, tag lists
+      let stacked = 0;
+      for (let i = 1; i < kids.length; i++) if (kids[i].getBoundingClientRect().top >= kids[i - 1].getBoundingClientRect().bottom - 2) stacked++;
+      if (stacked / (kids.length - 1) < 0.7) continue;
+
+      const sample = kids.slice(-40);
+      const withAvatar = sample.filter((k) => avatarOf(k)).length / sample.length;
+      const withLabel = sample.filter((k) => nameLabel(k)).length / sample.length;
       const sigs = new Map();
       for (const k of kids) sigs.set(signature(k), (sigs.get(signature(k)) || 0) + 1);
       const top2 = [...sigs.values()].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
       const consistency = top2 / kids.length;
-      const avgLen = kids.reduce((n, k) => n + clean(k.textContent).length, 0) / kids.length;
-      if (avgLen < 12) continue; // menus, tag lists
-      // Messages stack vertically.
-      let stacked = 0;
-      for (let i = 1; i < kids.length; i++) if (kids[i].getBoundingClientRect().top >= kids[i - 1].getBoundingClientRect().bottom - 2) stacked++;
-      const vertical = stacked / (kids.length - 1);
-      if (vertical < 0.7) continue;
-      const score = kids.length * consistency * consistency * Math.log(avgLen + 1);
-      if (score > bestScore) { bestScore = score; best = el; }
+
+      const speakerSignal = 1 + 4 * Math.max(withAvatar, withLabel);
+      const score = kids.length * consistency * consistency * Math.log(avgLen + 1) * speakerSignal;
+      out.push({ el, score, kids: kids.length, withAvatar, withLabel, consistency, avgLen });
     }
-    return best;
+    return out.sort((a, b) => b.score - a.score);
+  }
+
+  function findChatContainer() {
+    return chatCandidates()[0]?.el || null;
   }
 
   const INLINE_FMT = new Set(["EM", "I", "B", "STRONG", "CODE", "S", "DEL", "U", "MARK", "SMALL", "SUP", "SUB", "Q", "CITE"]);
@@ -620,6 +636,59 @@
     };
   }
 
+  // ---------- debug dump: structure only, text truncated ----------
+  function skeleton(node, budget, depth = 0) {
+    if (budget.n-- <= 0) return "";
+    const ind = "  ".repeat(depth);
+    if (node.nodeType === 3) {
+      const t = clean(node.textContent);
+      return t ? `${ind}"${t.slice(0, 30)}${t.length > 30 ? "…" : ""}"\n` : "";
+    }
+    if (node.nodeType !== 1) return "";
+    const tag = node.tagName.toLowerCase();
+    if (tag === "script" || tag === "style") return "";
+    const attrs = [...node.attributes]
+      .filter((a) => ["class", "id", "role", "src", "aria-label"].includes(a.name) || a.name.startsWith("data-"))
+      .map((a) => `${a.name}="${a.name === "src" ? "[img]" : a.value.slice(0, 80)}"`).join(" ");
+    const r = node.getBoundingClientRect();
+    const box = ` {${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}}`;
+    if (depth > 14 || tag === "svg") return `${ind}<${tag} ${attrs}/>${box}\n`;
+    let out = `${ind}<${tag}${attrs ? " " + attrs : ""}>${box}\n`;
+    for (const c of node.childNodes) out += skeleton(c, budget, depth + 1);
+    return out;
+  }
+
+  function pathOf(el) {
+    const parts = [];
+    for (let n = el; n && n !== document.body && parts.length < 12; n = n.parentElement) {
+      parts.unshift(n.tagName.toLowerCase() + (n.id ? "#" + n.id : "") + (typeof n.className === "string" && n.className ? "." + n.className.trim().split(/\s+/).slice(0, 3).join(".") : ""));
+    }
+    return parts.join(" > ");
+  }
+
+  function chatDebug() {
+    const cands = chatCandidates().slice(0, 5);
+    const lines = [`url-host: ${location.host}`, `viewport: ${innerWidth}x${innerHeight}`, ""];
+    cands.forEach((c, i) => {
+      lines.push(`## candidate ${i + 1}: score=${c.score.toFixed(1)} kids=${c.kids} avatar=${c.withAvatar.toFixed(2)} label=${c.withLabel.toFixed(2)} consistency=${c.consistency.toFixed(2)} avgLen=${Math.round(c.avgLen)}`);
+      lines.push(`path: ${pathOf(c.el)}`);
+      const sc = scrollerFor(c.el);
+      const st = getComputedStyle(sc);
+      lines.push(`scroller: ${pathOf(sc) || sc.tagName} scrollTop=${Math.round(sc.scrollTop)} scrollHeight=${sc.scrollHeight} clientHeight=${sc.clientHeight} overflowY=${st.overflowY} flex=${st.flexDirection}`);
+      if (i === 0) {
+        const kids = [...c.el.children];
+        const pick = [...kids.slice(0, 3), ...kids.slice(-3)].filter((k, j, a) => a.indexOf(k) === j);
+        for (const k of pick) {
+          lines.push(`--- child ${kids.indexOf(k) + 1}/${kids.length} label=${JSON.stringify(nameLabel(k)?.text ?? null)} avatar=${avatarOf(k) ? "yes" : "no"}`);
+          lines.push(skeleton(k, { n: 250 }));
+        }
+      }
+      lines.push("");
+    });
+    if (!cands.length) lines.push("no candidates found", skeleton(document.body, { n: 600 }));
+    return lines.join("\n");
+  }
+
   function chatLikely() {
     if (findHeadings().some((h) => h.hasTokens)) return false;
     const c = findChatContainer();
@@ -630,6 +699,10 @@
     if (msg?.type === "chat") {
       scrapeChat(!!msg.loadAll).then(sendResponse, (e) => sendResponse({ messages: [], error: String(e?.message || e) }));
       return true;
+    }
+    if (msg?.type === "chatDebug") {
+      sendResponse({ text: chatDebug() });
+      return;
     }
     if (msg?.type === "chatProbe") {
       sendResponse({ chat: chatLikely() });
