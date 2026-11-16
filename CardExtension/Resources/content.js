@@ -333,7 +333,9 @@
 
   // ======================= CHAT EXPORT =======================
 
-  const NAV_LIKE = "nav, header, footer, aside, [role=navigation], [role=banner], [role=contentinfo], form";
+  const NAV_LIKE = "nav, header, footer, aside, form, [role=navigation], [role=banner], [role=contentinfo], " +
+    "[role=menu], [role=listbox], [role=dialog], [aria-modal=true], .chakra-portal, [class*=popover], [class*=Popover], " +
+    "[class*=popper], [class*=dropdown], [class*=Dropdown], [class*=modal], [class*=Modal], [data-radix-popper-content-wrapper]";
 
   // Class/id/data-* tokens, camelCase split: "MessageUser_bubble" -> message, user, bubble
   function attrTokens(el) {
@@ -377,21 +379,25 @@
       // The paragraphs of a message, not messages.
       const textish = kids.filter((k) => TEXT_BLOCKS.has(k.tagName)).length;
       if (textish / kids.length > 0.5) continue;
+      // Menus/pickers: rows that are buttons.
+      const buttony = kids.filter((k) => k.tagName === "BUTTON" || k.querySelector(":scope > button, :scope > a") && clean(k.querySelector(":scope > button, :scope > a").textContent).length >= clean(k.textContent).length * 0.8).length;
+      if (buttony / kids.length > 0.5) continue;
       const avgLen = kids.reduce((n, k) => n + clean(k.textContent).length, 0) / kids.length;
       if (avgLen < 12) continue; // menus, tag lists
       let stacked = 0;
       for (let i = 1; i < kids.length; i++) if (kids[i].getBoundingClientRect().top >= kids[i - 1].getBoundingClientRect().bottom - 2) stacked++;
       if (stacked / (kids.length - 1) < 0.7) continue;
 
-      const sample = kids.slice(-40);
+      const sample = kids.slice(-40).map((k) => unitOf(k));
       const withAvatar = sample.filter((k) => avatarOf(k)).length / sample.length;
       const withLabel = sample.filter((k) => nameLabel(k)).length / sample.length;
+      const msgWords = sample.filter((k) => [k, ...k.querySelectorAll("*")].slice(0, 6).some((e) => attrTokens(e).some((t) => /^(message|messages|msg|chat|turn|post|reply|bubble)$/.test(t)))).length / sample.length;
       const sigs = new Map();
       for (const k of kids) sigs.set(signature(k), (sigs.get(signature(k)) || 0) + 1);
       const top2 = [...sigs.values()].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
       const consistency = top2 / kids.length;
 
-      const speakerSignal = 1 + 4 * Math.max(withAvatar, withLabel);
+      const speakerSignal = (1 + 4 * Math.max(withAvatar, withLabel)) * (1 + msgWords);
       const score = kids.length * consistency * consistency * Math.log(avgLen + 1) * speakerSignal;
       out.push({ el, score, kids: kids.length, withAvatar, withLabel, consistency, avgLen });
     }
@@ -405,24 +411,72 @@
   const INLINE_FMT = new Set(["EM", "I", "B", "STRONG", "CODE", "S", "DEL", "U", "MARK", "SMALL", "SUP", "SUB", "Q", "CITE"]);
   const TIME_RE = /^(\d{1,2}[:.]\d{2}(\s?[ap]\.?m\.?)?|(just now|now|yesterday|today)|\d+\s*(s|sec|m|min|h|hr|d|day|w|wk)s?\s*ago|\d{1,2}\/\d{1,2}\/\d{2,4}.*)$/i;
 
-  // First short leaf text in a message: often the speaker's name.
-  function nameLabel(msgEl) {
-    const walker = document.createTreeWalker(msgEl, NodeFilter.SHOW_ELEMENT);
-    let n, i = 0;
-    while ((n = walker.nextNode()) && i++ < 30) {
-      if (MD_SKIP.has(n.tagName)) continue;
-      if ([...n.children].some((c) => clean(c.textContent))) continue; // not a text leaf
-      // Formatting inside the message text (*grunts*) is content, not a name.
-      if (INLINE_FMT.has(n.tagName) || n.parentElement?.closest("p, li, blockquote, pre, td") || /^(P|LI|BLOCKQUOTE|PRE|TD)$/.test(n.tagName)) {
-        if (clean(n.parentElement?.textContent).length > clean(n.textContent).length || /^(P|LI|BLOCKQUOTE|PRE|TD)$/.test(n.tagName)) return null;
-      }
-      const t = clean(n.textContent);
-      if (!t) continue;
-      if (TIME_RE.test(t)) continue;
-      if (t.length <= 40 && t.split(" ").length <= 5 && !/[.!?…"]$/.test(t)) return { el: n, text: t };
-      return null; // first real text is message content
+  // The element holding the message text itself (deepest one with most of the text).
+  function bodyOf(msgEl) {
+    const total = clean(msgEl.textContent).length;
+    if (!total) return null;
+    let best = null;
+    for (const el of msgEl.querySelectorAll("*")) {
+      if (MD_SKIP.has(el.tagName)) continue;
+      if (clean(el.textContent).length >= total * 0.6) best = el; // later = deeper in document order
     }
-    return null;
+    // Climb back out of a lone paragraph to its container.
+    while (best && best !== msgEl && TEXT_BLOCKS.has(best.tagName) && best.parentElement) best = best.parentElement;
+    return best && best !== msgEl ? best : null;
+  }
+
+  const NAME_TOK = /^(name|names|author|sender|username|nickname|displayname|charname|speaker|persona)$/;
+  const looksLikeName = (t) => t && t.length <= 40 && t.split(" ").length <= 5 && !TIME_RE.test(t) &&
+    !/^[\d\s/|·•.…-]+$/.test(t) && !/[.!?…"”]$/.test(t);
+
+  // The speaker's name label: a short text outside the message body,
+  // preferably in an element whose class says "name".
+  function nameLabel(msgEl) {
+    const body = bodyOf(msgEl);
+    const outside = (n) => !body || !body.contains(n);
+    const leaves = [];
+    for (const n of msgEl.querySelectorAll("*")) {
+      if (MD_SKIP.has(n.tagName) || !outside(n) || n.closest("button, [role=button]")) continue;
+      if ([...n.children].some((c) => clean(c.textContent))) continue; // not a text leaf
+      const t = clean(n.textContent);
+      if (!looksLikeName(t)) continue;
+      leaves.push({ el: n, text: t });
+      if (leaves.length > 12) break;
+    }
+    const named = leaves.find((l) => {
+      for (let e = l.el; e && e !== msgEl; e = e.parentElement) if (attrTokens(e).some((t) => NAME_TOK.test(t))) return true;
+      return false;
+    });
+    return named || leaves[0] || null;
+  }
+
+  // Swipes / alternative replies: several versions side by side with only one
+  // on screen. Use the version that's actually showing.
+  function unitOf(el) {
+    for (let depth = 0; depth < 6; depth++) {
+      let choice = null;
+      for (const p of [el, ...el.querySelectorAll("*")].slice(0, 200)) {
+        const kids = [...p.children].filter((k) => clean(k.textContent).length > 10);
+        if (kids.length < 2) continue;
+        const sig = signature(kids[0]);
+        if (!kids.every((k) => signature(k) === sig)) continue;
+        const rects = kids.map((k) => k.getBoundingClientRect());
+        const sideBySide = rects.every((r, i) => !i || r.left >= rects[i - 1].right - 2 || r.right <= rects[i - 1].left + 2);
+        const sameRow = rects.every((r) => Math.abs(r.top - rects[0].top) < 4);
+        if (!sideBySide || !sameRow) continue;
+        // The one overlapping the viewport horizontally the most.
+        let best = -1, bi = 0;
+        rects.forEach((r, i) => {
+          const ov = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+          if (ov > best) { best = ov; bi = i; }
+        });
+        choice = kids[bi];
+        break;
+      }
+      if (!choice) return el;
+      el = choice;
+    }
+    return el;
   }
 
   function sideOf(msgEl, container) {
@@ -469,9 +523,12 @@
   }
 
   function messageText(msgEl, label) {
-    const clone = msgEl.cloneNode(true);
-    // Drop the name label, timestamps and UI chrome from the copy.
-    if (label) {
+    // Prefer just the message body (no name, swipe counter, buttons).
+    const body = bodyOf(msgEl);
+    const useBody = body && (!label || !body.contains(label.el));
+    const clone = (useBody ? body : msgEl).cloneNode(true);
+    if (!useBody && label) {
+      // Drop the name label from the copy.
       const path = [];
       for (let n = label.el; n && n !== msgEl; n = n.parentNode) path.unshift([...n.parentNode.childNodes].indexOf(n));
       let c = clone;
@@ -482,21 +539,24 @@
     for (const el of clone.querySelectorAll("*")) {
       if (!clone.contains(el)) continue; // already removed with an ancestor
       const t = clean(el.textContent);
-      if (t && TIME_RE.test(t) && el.childElementCount === 0) el.remove();
+      if (t && el.childElementCount === 0 && (TIME_RE.test(t) || /^\d+\s*\/\s*\d+$/.test(t))) el.remove(); // times, "2/3" swipe counters
     }
-    return { md: toMarkdown([clone]), plain: tidy(clone.textContent.replace(/[ \t]+/g, " ")) };
+    // Convert the contents, so a wrapper <li> doesn't turn into a bullet.
+    const parts = [...clone.childNodes];
+    return { md: toMarkdown(parts), plain: tidy(clone.innerText ?? clone.textContent) || tidy(clone.textContent.replace(/[ \t]+/g, " ")) };
   }
 
   function snapshot(container) {
     const out = [];
-    for (const m of container.children) {
-      if (!clean(m.textContent) || !m.getClientRects().length) continue;
+    for (const kid of container.children) {
+      if (!clean(kid.textContent) || !kid.getClientRects().length) continue;
+      const m = unitOf(kid);
       const label = nameLabel(m);
       const { md, plain } = messageText(m, label);
       if (!plain || !/[\p{L}\p{N}]/u.test(plain)) continue; // "•••" separators, icon rows
       if (!label && plain.length <= 5 && !avatarOf(m)) continue; // tiny unlabeled UI rows
       out.push({
-        key: plain.slice(0, 200),
+        key: (label?.text || "") + "|" + plain.length + "|" + plain.slice(0, 300),
         label: label?.text || null,
         labelSig: label ? labelSignature(label.el, m) : null,
         avatar: avatarOf(m),
@@ -508,15 +568,29 @@
     return out;
   }
 
-  // Prepend messages that appeared above what we already have.
-  function merge(collected, snap) {
-    if (!collected.length) return snap;
-    const first = collected[0].key;
-    const k = snap.findIndex((m) => m.key === first);
+  // Prepend messages that appeared above what we already have (going up).
+  function mergeUp(collected, snap) {
+    if (!collected.length) return snap.slice();
+    const firstKey = collected[0].key;
+    const k = snap.findIndex((m) => m.key === firstKey);
     if (k > 0) return [...snap.slice(0, k), ...collected];
     if (k === 0) return collected;
-    // No overlap: a jump. Keep whichever is longer, older first.
-    return snap.length > collected.length ? snap : [...snap, ...collected];
+    const seen = new Set(collected.map((m) => m.key));
+    return [...snap.filter((m) => !seen.has(m.key)), ...collected];
+  }
+
+  // Append messages that appeared below what we already have (sweeping down).
+  function mergeDown(collected, snap) {
+    if (!collected.length) return snap.slice();
+    const lastKey = collected[collected.length - 1].key;
+    for (let j = snap.length - 1; j >= 0; j--) {
+      if (snap[j].key === lastKey) return collected.concat(snap.slice(j + 1));
+    }
+    // No overlap with our last message: keep only genuinely new ones, in order.
+    const seen = new Set(collected.map((m) => m.key));
+    const fresh = snap.filter((m) => !seen.has(m.key));
+    if (fresh.length && fresh.length === snap.length) collected.gap = true;
+    return collected.concat(fresh);
   }
 
   function scrollerFor(el) {
@@ -529,24 +603,69 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  async function loadHistory(container, collect) {
-    const scroller = scrollerFor(container);
+  const progress = (text) => { try { api.runtime.sendMessage({ type: "chatProgress", text }); } catch {} };
+  const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  function scrollModel(scroller) {
     const reversed = getComputedStyle(scroller).flexDirection === "column-reverse" ||
-      getComputedStyle(container).flexDirection === "column-reverse";
-    let stable = 0, lastH = -1, lastFirst = null;
+      [...scroller.children].some((c) => getComputedStyle(c).flexDirection === "column-reverse") && scroller.scrollTop <= 0;
+    const max = () => scroller.scrollHeight - scroller.clientHeight;
+    return {
+      // position measured from the top (0 = oldest end)
+      get: () => (reversed ? scroller.scrollTop + max() : scroller.scrollTop),
+      set: (p) => { scroller.scrollTop = reversed ? p - max() : p; scroller.dispatchEvent(new Event("scroll")); },
+      max,
+    };
+  }
+
+  // Phase 1: go to the top until no older messages load.
+  // Phase 2: sweep down one screen at a time, collecting every message, so
+  // virtualised lists (only a handful of messages on the page) still export fully.
+  async function loadAllMessages(getContainer) {
+    let container = getContainer();
+    const scroller = scrollerFor(container);
+    const pos = scrollModel(scroller);
     const t0 = Date.now();
-    for (let i = 0; i < 400 && stable < 4 && Date.now() - t0 < 180_000; i++) {
-      scroller.scrollTop = reversed ? -scroller.scrollHeight : 0;
-      scroller.dispatchEvent(new Event("scroll"));
-      await sleep(700);
-      if (!container.isConnected) container = findChatContainer() || container;
-      collect(container);
-      const first = clean(container.firstElementChild?.textContent).slice(0, 80);
+
+    // Also collect on the way up, for lists that drop messages for good.
+    let upward = snapshot(container);
+    let stable = 0, lastH = -1, lastFirst = null;
+    for (let i = 0; i < 300 && stable < 3 && Date.now() - t0 < 240_000; i++) {
+      pos.set(0);
+      await sleep(900);
+      await frame();
+      if (!container.isConnected) container = getContainer() || container;
+      upward = mergeUp(upward, snapshot(container));
+      const first = clean(unitOf(container.firstElementChild || container).textContent).slice(0, 120);
       const h = scroller.scrollHeight;
-      stable = h === lastH && first === lastFirst ? stable + 1 : 0;
+      stable = h === lastH && first === lastFirst && pos.get() < 5 ? stable + 1 : 0;
       lastH = h; lastFirst = first;
+      progress(`Loading older messages… (${i + 1})`);
     }
-    return container;
+
+    let collected = [];
+    const step = Math.max(200, Math.floor(scroller.clientHeight * 0.6));
+    let atBottom = 0, p = 0;
+    for (let i = 0; i < 6000 && atBottom < 3 && Date.now() - t0 < 900_000; i++) {
+      await frame();
+      await sleep(60);
+      if (!container.isConnected) container = getContainer() || container;
+      collected = mergeDown(collected, snapshot(container));
+      if (i % 5 === 0) progress(`Reading messages… ${collected.length} so far`);
+      const before = pos.get();
+      p = before + step;
+      pos.set(p);
+      await frame();
+      atBottom = pos.get() <= before + 1 ? atBottom + 1 : 0;
+    }
+    // One last read at the very bottom.
+    await sleep(300);
+    collected = mergeDown(collected, snapshot(getContainer() || container));
+    // Anything only seen on the way up (after where the sweep ended) goes on the end.
+    const gap = collected.gap;
+    collected = mergeDown(collected, upward);
+    collected.gap = gap;
+    return collected;
   }
 
   // Every message is judged on its own evidence. Nothing is inherited from the
@@ -615,14 +734,14 @@
   async function scrapeChat(loadAll) {
     let container = findChatContainer();
     if (!container) return { messages: [], error: "Couldn't find the chat messages on this page." };
-    let collected = [];
-    const collect = (c) => { collected = merge(collected, snapshot(c)); };
-    collect(container);
+    // Keep finding "the same" list even if the page re-renders it.
+    const path = pathOf(container);
+    const getContainer = () => (container.isConnected ? container : (container = findChatContainer()));
+    let collected;
     if (loadAll) {
-      container = await loadHistory(container, collect);
-      // Back to the newest messages.
-      const sc = scrollerFor(container);
-      sc.scrollTop = getComputedStyle(sc).flexDirection === "column-reverse" ? 0 : sc.scrollHeight;
+      collected = await loadAllMessages(getContainer);
+    } else {
+      collected = snapshot(container);
     }
     const charName = chatTitleName();
     const info = resolveSpeakers(collected, charName);
@@ -631,8 +750,10 @@
       speakers: info.speakers,
       charSpeaker: info.charSpeaker || null,
       method: info.method,
+      gap: !!collected.gap,
       messages: collected.map(({ md, plain, is_user, speaker }) => ({ md, plain, is_user, speaker: speaker || null })),
       url: location.href,
+      path,
     };
   }
 
@@ -675,12 +796,13 @@
       const sc = scrollerFor(c.el);
       const st = getComputedStyle(sc);
       lines.push(`scroller: ${pathOf(sc) || sc.tagName} scrollTop=${Math.round(sc.scrollTop)} scrollHeight=${sc.scrollHeight} clientHeight=${sc.clientHeight} overflowY=${st.overflowY} flex=${st.flexDirection}`);
-      if (i === 0) {
+      if (i < 2) {
         const kids = [...c.el.children];
-        const pick = [...kids.slice(0, 3), ...kids.slice(-3)].filter((k, j, a) => a.indexOf(k) === j);
+        const pick = [...kids.slice(0, 2), ...kids.slice(-2)].filter((k, j, a) => a.indexOf(k) === j);
         for (const k of pick) {
-          lines.push(`--- child ${kids.indexOf(k) + 1}/${kids.length} label=${JSON.stringify(nameLabel(k)?.text ?? null)} avatar=${avatarOf(k) ? "yes" : "no"}`);
-          lines.push(skeleton(k, { n: 250 }));
+          const u = unitOf(k);
+          lines.push(`--- child ${kids.indexOf(k) + 1}/${kids.length} unit=${u === k ? "self" : pathOf(u).split(" > ").slice(-2).join(" > ")} label=${JSON.stringify(nameLabel(u)?.text ?? null)} avatar=${avatarOf(u) ? "yes" : "no"}`);
+          lines.push(skeleton(k, { n: 160 }));
         }
       }
       lines.push("");

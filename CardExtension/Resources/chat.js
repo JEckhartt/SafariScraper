@@ -186,7 +186,7 @@ export async function loadChat() {
   chat.busy = true;
   $("rescanChat").disabled = $("saveChat").disabled = true;
   const loadAll = $("chatLoadAll").checked;
-  setStatus(loadAll ? "Scrolling up to load the whole chat… (long chats take a while)" : "Reading messages…");
+  setStatus(loadAll ? "Loading the whole chat… keep this open (long chats take a few minutes)" : "Reading messages…");
   try {
     const res = await send({ type: "chat", loadAll });
     if (!res || res.error) throw new Error(res?.error || "No response from page.");
@@ -208,7 +208,8 @@ export async function loadChat() {
       setStatus("No messages found. Open the chat itself, then try again.", true);
     } else if (!$("status").textContent) {
       setStatus(`Found ${chat.messages.length} messages, speakers read from ${res.method}. ` +
-        (chat.roles.size ? "Pick who's the character and who's you above." : "Tap a chip to fix any message."));
+        (chat.roles.size ? "Pick who's the character and who's you above." : "Tap a chip to fix any message.") +
+        (res.gap ? " ⚠ Some messages may have been skipped while scrolling. Try Scan chat again." : ""));
     }
   } catch (e) {
     setStatus(e.message || String(e), true);
@@ -239,6 +240,9 @@ export async function debugFile() {
 }
 
 export function initChat() {
+  api.runtime?.onMessage?.addListener((msg) => {
+    if (msg?.type === "chatProgress" && chat.busy) setStatus(msg.text);
+  });
   for (const id of ["chatChar", "chatUser"]) {
     $(id).addEventListener("input", (e) => { e.target.dataset.touched = "1"; render(); });
   }
