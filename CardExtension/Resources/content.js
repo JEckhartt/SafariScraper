@@ -331,7 +331,253 @@
     return "Character";
   }
 
+  // ======================= CHAT EXPORT =======================
+
+  const NAV_LIKE = "nav, header, footer, aside, [role=navigation], [role=banner], [role=contentinfo], form";
+
+  // Class/id/data-* tokens, camelCase split: "MessageUser_bubble" -> message, user, bubble
+  function attrTokens(el) {
+    const parts = [el.id, typeof el.className === "string" ? el.className : el.getAttribute("class") || ""];
+    for (const a of el.attributes) if (a.name.startsWith("data-") || a.name === "role" || a.name === "aria-label") parts.push(a.name, a.value);
+    return parts.join(" ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  }
+  const USER_TOK = new Set(["user", "human", "self", "me", "mine", "own", "outgoing", "outbound", "sent", "right", "persona", "you", "player"]);
+  const BOT_TOK = new Set(["bot", "char", "character", "assistant", "ai", "model", "incoming", "inbound", "received", "left", "npc", "llm"]);
+
+  function attrHint(msgEl) {
+    let u = 0, b = 0;
+    const els = [msgEl, ...msgEl.querySelectorAll("*")].slice(0, 40);
+    for (const el of els) {
+      for (const t of attrTokens(el)) {
+        if (USER_TOK.has(t)) u++;
+        if (BOT_TOK.has(t)) b++;
+      }
+    }
+    return u > b ? 1 : b > u ? -1 : 0;
+  }
+
+  function signature(el) {
+    const cls = (typeof el.className === "string" ? el.className : "").split(/\s+/)
+      .filter((c) => c && !/(user|bot|char|human|assistant|ai|self|me|left|right|active|selected|last|first|new|odd|even)/i.test(c))
+      .sort().join(".");
+    return el.tagName + "." + cls;
+  }
+
+  function findChatContainer() {
+    let best = null, bestScore = 0;
+    for (const el of document.body.querySelectorAll("*")) {
+      if (el.childElementCount < 2 || MD_SKIP.has(el.tagName) || el.closest(NAV_LIKE)) continue;
+      const kids = [...el.children].filter((k) => clean(k.textContent).length >= 2 && k.getClientRects().length);
+      if (kids.length < 2) continue;
+      const sigs = new Map();
+      for (const k of kids) sigs.set(signature(k), (sigs.get(signature(k)) || 0) + 1);
+      const top2 = [...sigs.values()].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
+      const consistency = top2 / kids.length;
+      const avgLen = kids.reduce((n, k) => n + clean(k.textContent).length, 0) / kids.length;
+      if (avgLen < 12) continue; // menus, tag lists
+      // Messages stack vertically.
+      let stacked = 0;
+      for (let i = 1; i < kids.length; i++) if (kids[i].getBoundingClientRect().top >= kids[i - 1].getBoundingClientRect().bottom - 2) stacked++;
+      const vertical = stacked / (kids.length - 1);
+      if (vertical < 0.7) continue;
+      const score = kids.length * consistency * consistency * Math.log(avgLen + 1);
+      if (score > bestScore) { bestScore = score; best = el; }
+    }
+    return best;
+  }
+
+  const INLINE_FMT = new Set(["EM", "I", "B", "STRONG", "CODE", "S", "DEL", "U", "MARK", "SMALL", "SUP", "SUB", "Q", "CITE"]);
+  const TIME_RE = /^(\d{1,2}[:.]\d{2}(\s?[ap]\.?m\.?)?|(just now|now|yesterday|today)|\d+\s*(s|sec|m|min|h|hr|d|day|w|wk)s?\s*ago|\d{1,2}\/\d{1,2}\/\d{2,4}.*)$/i;
+
+  // First short leaf text in a message: often the speaker's name.
+  function nameLabel(msgEl) {
+    const walker = document.createTreeWalker(msgEl, NodeFilter.SHOW_ELEMENT);
+    let n, i = 0;
+    while ((n = walker.nextNode()) && i++ < 30) {
+      if (MD_SKIP.has(n.tagName)) continue;
+      if ([...n.children].some((c) => clean(c.textContent))) continue; // not a text leaf
+      // Formatting inside the message text (*grunts*) is content, not a name.
+      if (INLINE_FMT.has(n.tagName) || n.parentElement?.closest("p, li, blockquote, pre, td") || /^(P|LI|BLOCKQUOTE|PRE|TD)$/.test(n.tagName)) {
+        if (clean(n.parentElement?.textContent).length > clean(n.textContent).length || /^(P|LI|BLOCKQUOTE|PRE|TD)$/.test(n.tagName)) return null;
+      }
+      const t = clean(n.textContent);
+      if (!t) continue;
+      if (TIME_RE.test(t)) continue;
+      if (t.length <= 40 && t.split(" ").length <= 5 && !/[.!?…"]$/.test(t)) return { el: n, text: t };
+      return null; // first real text is message content
+    }
+    return null;
+  }
+
+  function sideOf(msgEl, container) {
+    const c = container.getBoundingClientRect();
+    if (c.width < 50) return null;
+    // Widest text-holding descendant narrower than the container = the bubble.
+    let bubble = null, bw = 0;
+    for (const el of [msgEl, ...msgEl.querySelectorAll("*")].slice(0, 60)) {
+      const r = el.getBoundingClientRect();
+      if (r.width < c.width * 0.92 && r.width > bw && clean(el.textContent).length > 3) { bubble = r; bw = r.width; }
+    }
+    if (!bubble) return null;
+    const leftGap = bubble.left - c.left, rightGap = c.right - bubble.right;
+    if (Math.abs(leftGap - rightGap) < c.width * 0.08) return null;
+    return rightGap < leftGap ? "R" : "L";
+  }
+
+  function messageText(msgEl, label) {
+    const clone = msgEl.cloneNode(true);
+    // Drop the name label, timestamps and UI chrome from the copy.
+    if (label) {
+      const path = [];
+      for (let n = label.el; n && n !== msgEl; n = n.parentNode) path.unshift([...n.parentNode.childNodes].indexOf(n));
+      let c = clone;
+      for (const i of path) c = c?.childNodes[i];
+      c?.remove();
+    }
+    for (const el of clone.querySelectorAll("time, button, [role=button], svg, [aria-hidden=true]")) el.remove();
+    for (const el of clone.querySelectorAll("*")) {
+      if (!clone.contains(el)) continue; // already removed with an ancestor
+      const t = clean(el.textContent);
+      if (t && TIME_RE.test(t) && el.childElementCount === 0) el.remove();
+    }
+    return { md: toMarkdown([clone]), plain: tidy(clone.textContent.replace(/[ \t]+/g, " ")) };
+  }
+
+  function snapshot(container) {
+    const out = [];
+    for (const m of container.children) {
+      if (!clean(m.textContent) || !m.getClientRects().length) continue;
+      const label = nameLabel(m);
+      const { md, plain } = messageText(m, label);
+      if (!plain) continue;
+      out.push({ key: plain.slice(0, 200), label: label?.text || null, attr: attrHint(m), side: sideOf(m, container), md, plain });
+    }
+    return out;
+  }
+
+  // Prepend messages that appeared above what we already have.
+  function merge(collected, snap) {
+    if (!collected.length) return snap;
+    const first = collected[0].key;
+    const k = snap.findIndex((m) => m.key === first);
+    if (k > 0) return [...snap.slice(0, k), ...collected];
+    if (k === 0) return collected;
+    // No overlap: a jump. Keep whichever is longer, older first.
+    return snap.length > collected.length ? snap : [...snap, ...collected];
+  }
+
+  function scrollerFor(el) {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      const st = getComputedStyle(n);
+      if (/(auto|scroll)/.test(st.overflowY) && n.scrollHeight > n.clientHeight + 20) return n;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function loadHistory(container, collect) {
+    const scroller = scrollerFor(container);
+    const reversed = getComputedStyle(scroller).flexDirection === "column-reverse" ||
+      getComputedStyle(container).flexDirection === "column-reverse";
+    let stable = 0, lastH = -1, lastFirst = null;
+    const t0 = Date.now();
+    for (let i = 0; i < 400 && stable < 4 && Date.now() - t0 < 180_000; i++) {
+      scroller.scrollTop = reversed ? -scroller.scrollHeight : 0;
+      scroller.dispatchEvent(new Event("scroll"));
+      await sleep(700);
+      if (!container.isConnected) container = findChatContainer() || container;
+      collect(container);
+      const first = clean(container.firstElementChild?.textContent).slice(0, 80);
+      const h = scroller.scrollHeight;
+      stable = h === lastH && first === lastFirst ? stable + 1 : 0;
+      lastH = h; lastFirst = first;
+    }
+    return container;
+  }
+
+  function resolveSpeakers(msgs, charName) {
+    const norm = (s) => clean(s).toLowerCase();
+    const cn = norm(charName);
+    // 1. Name labels that repeat.
+    const freq = new Map();
+    for (const m of msgs) if (m.label) freq.set(m.label, (freq.get(m.label) || 0) + 1);
+    const names = [...freq].filter(([, n]) => n >= 2).map(([l]) => l);
+    const labelled = msgs.filter((m) => m.label && names.includes(m.label)).length;
+    if (names.length >= 1 && names.length <= 6 && labelled >= msgs.length * 0.6) {
+      let charLabel = names.find((l) => norm(l) === cn) ||
+        names.find((l) => cn && (norm(l).includes(cn) || cn.includes(norm(l))));
+      if (!charLabel && names.length >= 2) charLabel = msgs.find((m) => names.includes(m.label))?.label;
+      if (charLabel) {
+        let last = false;
+        for (const m of msgs) {
+          if (m.label && names.includes(m.label)) last = m.label !== charLabel;
+          m.is_user = last;
+        }
+        const userName = names.find((l) => l !== charLabel) || null;
+        return { method: "name labels", charName: charLabel, userName };
+      }
+    }
+    // 2. user/bot markers in the page code.
+    const u = msgs.filter((m) => m.attr > 0).length, b = msgs.filter((m) => m.attr < 0).length;
+    if (u && b && u + b >= msgs.length * 0.6) {
+      for (const m of msgs) m.is_user = m.attr > 0;
+      return { method: "page markers" };
+    }
+    // 3. Bubble alignment.
+    const R = msgs.filter((m) => m.side === "R").length, L = msgs.filter((m) => m.side === "L").length;
+    if (R && L && R + L >= msgs.length * 0.6) {
+      for (const m of msgs) m.is_user = m.side === "R";
+      return { method: "bubble alignment" };
+    }
+    // 4. Alternate, character first.
+    msgs.forEach((m, i) => (m.is_user = i % 2 === 1));
+    return { method: "alternating (guess)" };
+  }
+
+  function chatTitleName() {
+    const n = scrapeName();
+    return n.replace(/^(chat(ting)?\s+with|chat:?)\s+/i, "").trim() || n;
+  }
+
+  async function scrapeChat(loadAll) {
+    let container = findChatContainer();
+    if (!container) return { messages: [], error: "Couldn't find the chat messages on this page." };
+    let collected = [];
+    const collect = (c) => { collected = merge(collected, snapshot(c)); };
+    collect(container);
+    if (loadAll) {
+      container = await loadHistory(container, collect);
+      // Back to the newest messages.
+      const sc = scrollerFor(container);
+      sc.scrollTop = getComputedStyle(sc).flexDirection === "column-reverse" ? 0 : sc.scrollHeight;
+    }
+    const charName = chatTitleName();
+    const info = resolveSpeakers(collected, charName);
+    return {
+      charName: info.charName || charName,
+      userName: info.userName || "You",
+      method: info.method,
+      messages: collected.map(({ md, plain, is_user, label }) => ({ md, plain, is_user, label })),
+      url: location.href,
+    };
+  }
+
+  function chatLikely() {
+    if (findHeadings().some((h) => h.hasTokens)) return false;
+    const c = findChatContainer();
+    return !!c && (/chat|conversation|messages?/i.test(location.pathname) || c.childElementCount >= 4);
+  }
+
   api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === "chat") {
+      scrapeChat(!!msg.loadAll).then(sendResponse, (e) => sendResponse({ messages: [], error: String(e?.message || e) }));
+      return true;
+    }
+    if (msg?.type === "chatProbe") {
+      sendResponse({ chat: chatLikely() });
+      return;
+    }
     if (msg?.type !== "card") return;
     const images = scrapeImages();
     const mainImg = images.find((i) => i.el)?.el || null;

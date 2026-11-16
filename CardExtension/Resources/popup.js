@@ -1,4 +1,5 @@
 import { buildCard, embedCard, isPng } from "./png.js";
+import { initChat, loadChat, probeChat, chatFile, chatLoaded } from "./chat.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
@@ -23,6 +24,17 @@ function invalidate() {
   state.prepared = null;
   $("savePng").textContent = "Save card PNG";
   $("saveJson").textContent = "JSON";
+  $("saveChat").textContent = "Save chat (.jsonl)";
+}
+
+function showTab(name) {
+  for (const b of document.querySelectorAll(".tabs button")) b.classList.toggle("on", b.dataset.tab === name);
+  $("cardView").hidden = $("cardActions").hidden = name !== "card";
+  $("chatView").hidden = $("chatActions").hidden = name !== "chat";
+  invalidate();
+  setStatus("");
+  if (name === "chat" && !chatLoaded()) loadChat();
+  if (name === "card" && !state.cardLoaded) scrape().catch((e) => setStatus(e.message || String(e), true));
 }
 
 function selectImage(i) {
@@ -53,6 +65,7 @@ function renderThumbs() {
 }
 
 async function scrape() {
+  state.cardLoaded = true;
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   state.tab = tab;
   let res;
@@ -169,7 +182,7 @@ function download(file) {
 
 // Share sheet needs a fresh tap; if building took too long, keep the file and ask for a second tap.
 async function deliver(kind, buttonId, build) {
-  const btns = [$("savePng"), $("saveJson")];
+  const btns = [$("savePng"), $("saveJson"), $("saveChat")];
   try {
     let file;
     if (state.prepared?.kind === kind) {
@@ -214,4 +227,12 @@ $("keepMd").addEventListener("change", (e) => {
   fillFields();
 });
 
-scrape().catch((e) => setStatus(e.message || String(e), true));
+$("saveChat").addEventListener("click", () => deliver("chat", "saveChat", async () => chatFile()));
+for (const b of document.querySelectorAll(".tabs button")) b.addEventListener("click", () => showTab(b.dataset.tab));
+initChat();
+
+(async () => {
+  // Chat pages open straight on the Chat tab.
+  if (await probeChat()) return showTab("chat");
+  await scrape();
+})().catch((e) => setStatus(e.message || String(e), true));

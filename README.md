@@ -45,6 +45,16 @@ Open a character page → extensions menu → **CardScraper**.
 
 Save it with **Save to Files**, not Photos: Photos can strip the embedded text.
 
+### Chat export
+
+On a chat page CardScraper opens on its **Chat** tab (or tap **Chat** yourself).
+
+- Scrolls up until the whole history has loaded. Messages are collected as it goes, so sites that unload old messages still export completely.
+- Works out who said what from name labels, `user`/`bot` markers in the page code, or bubble alignment, in that order. The status line says which one it used.
+- Tap a speaker chip to flip it, ✕ to drop junk, and rename the character or yourself at the top.
+- **Save chat (.jsonl)** writes a SillyTavern chat file. In SillyTavern, open the character → **Manage chat files → Import chat**.
+- Timestamps, copy buttons and other UI are stripped. *Actions* are kept as Markdown (toggleable).
+
 ## What SafariScraper finds
 
 `<img>` (largest `srcset` candidate), lazy-load attributes (`data-src`, `data-original`, `data-lazy-src`, …), `<picture>` sources, links that point at image files, CSS background images, video posters and `og:image` / `twitter:image`.

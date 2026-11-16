@@ -52,6 +52,7 @@ struct ContentView: View {
                     step(1, "Open a character page and tap **CardScraper** in the extensions menu.")
                     step(2, "It grabs the main image plus Scenario, Personality, First message and Example dialogs. Edit anything that's off.")
                     step(3, "Tap **Save card PNG** → **Save to Files**. The text is embedded in the PNG (Tavern card V2), ready to import.")
+                    step(4, "On a chat page, use the **Chat** tab to export the conversation as a SillyTavern **.jsonl** chat.")
                 }
 
                 Section {

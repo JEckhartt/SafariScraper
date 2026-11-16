@@ -7,7 +7,12 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <main>
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="card" class="on">Card</button>
+    <button type="button" role="tab" data-tab="chat">Chat</button>
+  </nav>
+
+  <main id="cardView">
     <div class="hero">
       <img id="preview" alt="">
       <div class="hero-side">
@@ -42,11 +47,28 @@
     </section>
   </main>
 
+  <main id="chatView" hidden>
+    <div class="names">
+      <div><label class="lbl" for="chatChar">Character</label><input id="chatChar" autocomplete="off"></div>
+      <div><label class="lbl" for="chatUser">You</label><input id="chatUser" autocomplete="off" value="You"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="chatLoadAll" checked> Scroll up and load the whole chat history</label>
+    <label class="check"><input type="checkbox" id="chatMd" checked> Keep formatting as Markdown (*actions*)</label>
+    <div class="row chat-tools">
+      <span id="chatCount" class="muted"></span>
+      <button id="rescanChat" type="button" class="small">Scan chat</button>
+    </div>
+    <ol id="chatList" class="chat"></ol>
+  </main>
+
   <footer>
     <div id="status" aria-live="polite"></div>
-    <div class="row">
+    <div class="row" id="cardActions">
       <button id="savePng" class="primary">Save card PNG</button>
       <button id="saveJson">JSON</button>
+    </div>
+    <div class="row" id="chatActions" hidden>
+      <button id="saveChat" class="primary" disabled>Save chat (.jsonl)</button>
     </div>
   </footer>
 
