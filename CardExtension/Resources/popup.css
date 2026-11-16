@@ -93,3 +93,14 @@ button.small { flex: none; padding: 6px 12px; }
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
 }
 .msg .body.open { display: block; }
+
+.speakers { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.speaker { display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: 10px; padding: 6px 8px; }
+.sp-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg { display: flex; flex: none; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { flex: none; border: none; border-radius: 0; padding: 5px 10px; font-size: 12px; background: var(--bg); color: var(--muted); }
+.seg button.on { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.seg button + button { border-left: 1px solid var(--border); }
+.speaker:has(.seg button.on:last-child) .seg button.on { background: #0a84ff; }
+.msg.unknown { border-left-color: #ff9f0a; }
+.msg.unknown .who { color: #ff9f0a; }

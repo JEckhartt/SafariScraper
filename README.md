@@ -50,8 +50,9 @@ Save it with **Save to Files**, not Photos: Photos can strip the embedded text.
 On a chat page CardScraper opens on its **Chat** tab (or tap **Chat** yourself).
 
 - Scrolls up until the whole history has loaded. Messages are collected as it goes, so sites that unload old messages still export completely.
-- Works out who said what from name labels, `user`/`bot` markers in the page code, or bubble alignment, in that order. The status line says which one it used.
-- Tap a speaker chip to flip it, ✕ to drop junk, and rename the character or yourself at the top.
+- Reads the speaker of **every message on its own**: its name label, or its avatar matched to a labelled message. Nothing is inferred from message order, so double and triple posts come out right. Pages with no names or avatars fall back to per-message `user`/`bot` markers or bubble alignment.
+- A **Speakers** list shows everyone found. Choose **Character** or **You** for each. Extra speakers (narrators, NPCs) keep their own names in the file.
+- Messages with no detectable speaker are marked **?** and must be set before saving. Tap a chip to change any message's speaker, ✕ to drop junk.
 - **Save chat (.jsonl)** writes a SillyTavern chat file. In SillyTavern, open the character → **Manage chat files → Import chat**.
 - Timestamps, copy buttons and other UI are stripped. *Actions* are kept as Markdown (toggleable).
 

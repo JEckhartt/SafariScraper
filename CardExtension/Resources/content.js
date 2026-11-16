@@ -424,6 +424,34 @@
     return rightGap < leftGap ? "R" : "L";
   }
 
+  // Where the label sits inside its message (tag/class path), so a speaker who
+  // only wrote once is still recognised by position, not by repetition.
+  function labelSignature(el, msgEl) {
+    const path = [];
+    for (let n = el; n && n !== msgEl && path.length < 4; n = n.parentElement) path.push(signature(n));
+    return path.join("<");
+  }
+
+  // The speaker's avatar: first small image in the message.
+  function avatarOf(msgEl) {
+    for (const img of msgEl.querySelectorAll("img")) {
+      const r = img.getBoundingClientRect();
+      if (r.width && r.width <= 160 && r.height <= 160) {
+        const src = img.currentSrc || img.src;
+        if (src) return src.split("#")[0];
+      }
+    }
+    // CSS background avatars
+    for (const el of msgEl.querySelectorAll("*")) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || r.width > 160) continue;
+      const bg = getComputedStyle(el).backgroundImage;
+      const m = bg && bg.match(/url\(["']?(.*?)["']?\)/);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
   function messageText(msgEl, label) {
     const clone = msgEl.cloneNode(true);
     // Drop the name label, timestamps and UI chrome from the copy.
@@ -449,8 +477,17 @@
       if (!clean(m.textContent) || !m.getClientRects().length) continue;
       const label = nameLabel(m);
       const { md, plain } = messageText(m, label);
-      if (!plain) continue;
-      out.push({ key: plain.slice(0, 200), label: label?.text || null, attr: attrHint(m), side: sideOf(m, container), md, plain });
+      if (!plain || !/[\p{L}\p{N}]/u.test(plain)) continue; // "•••" separators, icon rows
+      if (!label && plain.length <= 5 && !avatarOf(m)) continue; // tiny unlabeled UI rows
+      out.push({
+        key: plain.slice(0, 200),
+        label: label?.text || null,
+        labelSig: label ? labelSignature(label.el, m) : null,
+        avatar: avatarOf(m),
+        attr: attrHint(m),
+        side: sideOf(m, container),
+        md, plain,
+      });
     }
     return out;
   }
@@ -496,43 +533,62 @@
     return container;
   }
 
+  // Every message is judged on its own evidence. Nothing is inherited from the
+  // previous message and nothing alternates: unknown stays unknown (null).
   function resolveSpeakers(msgs, charName) {
-    const norm = (s) => clean(s).toLowerCase();
-    const cn = norm(charName);
-    // 1. Name labels that repeat.
-    const freq = new Map();
-    for (const m of msgs) if (m.label) freq.set(m.label, (freq.get(m.label) || 0) + 1);
-    const names = [...freq].filter(([, n]) => n >= 2).map(([l]) => l);
-    const labelled = msgs.filter((m) => m.label && names.includes(m.label)).length;
-    if (names.length >= 1 && names.length <= 6 && labelled >= msgs.length * 0.6) {
-      let charLabel = names.find((l) => norm(l) === cn) ||
-        names.find((l) => cn && (norm(l).includes(cn) || cn.includes(norm(l))));
-      if (!charLabel && names.length >= 2) charLabel = msgs.find((m) => names.includes(m.label))?.label;
-      if (charLabel) {
-        let last = false;
-        for (const m of msgs) {
-          if (m.label && names.includes(m.label)) last = m.label !== charLabel;
-          m.is_user = last;
-        }
-        const userName = names.find((l) => l !== charLabel) || null;
-        return { method: "name labels", charName: charLabel, userName };
+    const norm = (x) => clean(x).toLowerCase();
+    let method = null;
+
+    // 1. Name labels in the same position as the other name labels.
+    const sigCount = new Map();
+    for (const m of msgs) if (m.labelSig) sigCount.set(m.labelSig, (sigCount.get(m.labelSig) || 0) + 1);
+    const [domSig, domN] = [...sigCount].sort((a, b) => b[1] - a[1])[0] || [null, 0];
+    if (domSig && domN >= Math.max(2, msgs.length * 0.3)) {
+      for (const m of msgs) m.speaker = m.labelSig === domSig ? m.label : null;
+      method = "name labels";
+    } else {
+      for (const m of msgs) m.speaker = null;
+    }
+
+    // 2. Avatars: same picture as a labelled message = same speaker.
+    const avatarName = new Map();
+    for (const m of msgs) if (m.speaker && m.avatar && !avatarName.has(m.avatar)) avatarName.set(m.avatar, m.speaker);
+    let viaAvatar = 0;
+    for (const m of msgs) {
+      if (!m.speaker && m.avatar && avatarName.has(m.avatar)) { m.speaker = avatarName.get(m.avatar); viaAvatar++; }
+    }
+    if (!method) {
+      // No readable names at all: distinct avatars still separate the speakers.
+      const avatars = [...new Set(msgs.map((m) => m.avatar).filter(Boolean))];
+      const withAvatar = msgs.filter((m) => m.avatar).length;
+      if (avatars.length >= 2 && avatars.length <= 8 && withAvatar >= msgs.length * 0.6) {
+        for (const m of msgs) if (m.avatar) m.speaker = `Speaker ${avatars.indexOf(m.avatar) + 1}`;
+        method = "avatars";
       }
+    } else if (viaAvatar) {
+      method += " + avatars";
     }
-    // 2. user/bot markers in the page code.
-    const u = msgs.filter((m) => m.attr > 0).length, b = msgs.filter((m) => m.attr < 0).length;
-    if (u && b && u + b >= msgs.length * 0.6) {
-      for (const m of msgs) m.is_user = m.attr > 0;
-      return { method: "page markers" };
+
+    const speakers = [...new Set(msgs.map((m) => m.speaker).filter(Boolean))];
+    if (speakers.length) {
+      // Default roles only; the popup lets the user choose.
+      const charSpeaker =
+        speakers.find((n) => norm(n) === norm(charName)) ||
+        speakers.find((n) => norm(charName) && (norm(n).includes(norm(charName)) || norm(charName).includes(norm(n)))) ||
+        speakers[0];
+      for (const m of msgs) m.is_user = m.speaker ? m.speaker !== charSpeaker : null;
+      // Unnamed leftovers: use only that message's own markers/alignment.
+      for (const m of msgs) if (!m.speaker) m.is_user = m.attr ? m.attr > 0 : m.side ? m.side === "R" : null;
+      return { method, speakers, charSpeaker };
     }
-    // 3. Bubble alignment.
-    const R = msgs.filter((m) => m.side === "R").length, L = msgs.filter((m) => m.side === "L").length;
-    if (R && L && R + L >= msgs.length * 0.6) {
-      for (const m of msgs) m.is_user = m.side === "R";
-      return { method: "bubble alignment" };
+
+    // 3. No names or avatars: per-message page markers, then alignment.
+    const anyAttr = msgs.some((m) => m.attr > 0) && msgs.some((m) => m.attr < 0);
+    const anySide = msgs.some((m) => m.side === "R") && msgs.some((m) => m.side === "L");
+    for (const m of msgs) {
+      m.is_user = anyAttr && m.attr ? m.attr > 0 : anySide && m.side ? m.side === "R" : null;
     }
-    // 4. Alternate, character first.
-    msgs.forEach((m, i) => (m.is_user = i % 2 === 1));
-    return { method: "alternating (guess)" };
+    return { method: anyAttr ? "page markers" : anySide ? "bubble alignment" : "nothing (set speakers by hand)", speakers: [] };
   }
 
   function chatTitleName() {
@@ -555,10 +611,11 @@
     const charName = chatTitleName();
     const info = resolveSpeakers(collected, charName);
     return {
-      charName: info.charName || charName,
-      userName: info.userName || "You",
+      charName,
+      speakers: info.speakers,
+      charSpeaker: info.charSpeaker || null,
       method: info.method,
-      messages: collected.map(({ md, plain, is_user, label }) => ({ md, plain, is_user, label })),
+      messages: collected.map(({ md, plain, is_user, speaker }) => ({ md, plain, is_user, speaker: speaker || null })),
       url: location.href,
     };
   }
