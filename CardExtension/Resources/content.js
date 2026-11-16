@@ -65,7 +65,7 @@
       if (!f) continue;
       const parent = el.parentElement;
       if (parent && fieldFor(parent)) continue; // parent is the better (outer) match
-      out.push({ el, key: f.key });
+      out.push({ el, key: f.key, hasTokens: /\btokens?\b/i.test(el.textContent) });
     }
     return out;
   }
@@ -96,7 +96,12 @@
   const markdownOf = (nodes) => toMarkdown(nodes);
 
   function scrapeText(mainImg) {
-    const headings = findHeadings();
+    let headings = findHeadings();
+    // Real section headers show a token count ("PERSONALITY (940 TOKENS)").
+    // When the page has those, ignore look-alike labels inside the text
+    // ("Personality:", "### Scenario") so they stay part of the section.
+    const tokenHeads = headings.filter((h) => h.hasTokens && h.key !== "creator_notes");
+    if (tokenHeads.length) headings = tokenHeads;
     const els = headings.map((h) => h.el);
     const plain = {}, md = {};
     const firstSection = headings.find((h) => h.key !== "creator_notes")?.el;
