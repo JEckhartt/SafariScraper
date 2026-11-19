@@ -245,15 +245,15 @@
 
   async function scrapeEditPage(target) {
     const errors = [];
-    const rec = { name: target.name, href: target.href, thumb: target.thumb, url: location.href, errors };
+    const rec = { i: target.i, name: target.name, href: target.href, thumb: target.thumb, url: location.href, errors };
 
     const general = tabButton("General");
     if (general) { general.click(); await sleep(300); }
 
     // Wait for the form to fill (data loads after the page appears).
-    const titleField = await waitFor(() => field("Title"), 15000);
+    const titleField = await waitFor(() => field("Title"), 25000);
     if (!titleField) errors.push("Title field not found");
-    await waitFor(() => valueOf(field("Title")).trim(), 10000);
+    await waitFor(() => valueOf(field("Title")).trim(), 20000);
 
     rec.title = valueOf(field("Title")).trim();
     rec.chatName = valueOf(field("Chat name")).trim();
@@ -269,7 +269,7 @@
       return rec;
     }
     def.click();
-    const pers = await waitFor(() => field("Personality"), 10000);
+    const pers = await waitFor(() => field("Personality"), 20000);
     if (!pers) errors.push("Personality field not found");
     await waitFor(() => valueOf(field("Personality")).trim(), 3000);
 
@@ -315,40 +315,72 @@
   // ---------- driver ----------
   let driving = false;
 
+  // Problems worth one more try (slow/failed loads), as opposed to genuinely
+  // empty fields like "Personality empty".
+  const RETRYABLE = /^(Title field not found|Title empty|Page didn't load|Error:|Definition tab not found|Opened “|Couldn't find)/;
+  const PAUSE_MS = 1500; // between characters, to go easy on the site
+
+  // Finish the current target: keep the result, or retry it once.
+  function finish(st, rec) {
+    const retry = rec.errors.some((e) => RETRYABLE.test(e)) && !(st.attempt >= 1);
+    if (retry) {
+      st.attempt = 1;
+    } else {
+      if (st.attempt) rec.errors = rec.errors.map((e) => (RETRYABLE.test(e) ? e + " (after retry)" : e));
+      st.results.push(rec);
+      st.pos++;
+      st.attempt = 0;
+    }
+    save(st);
+    return retry;
+  }
+
+  function complete(st) {
+    if (st.kept) {
+      st.results = [...st.kept, ...st.results].sort((a, b) => (a.i ?? 0) - (b.i ?? 0));
+      delete st.kept;
+    }
+    st.status = "done";
+    save(st);
+    const bad = st.results.filter((r) => r.errors.length).length;
+    showBar(`Done: ${st.results.length} characters${bad ? `, ${bad} with problems` : ""}. Open CardScraper to save.`, true);
+  }
+
+  async function backToList(st) {
+    history.back();
+    const back = await waitFor(isListPage, 20000);
+    if (!back && st.listUrl) { location.assign(st.listUrl); return false; }
+    await sleep(PAUSE_MS);
+    return true;
+  }
+
   async function drive() {
     if (driving) return;
     driving = true;
     try {
-      for (let guard = 0; guard < 2000; guard++) {
+      for (let guard = 0; guard < 4000; guard++) {
         const st = load();
         if (!st || st.status !== "running") break;
-        if (st.pos >= st.queue.length) {
-          st.status = "done";
-          save(st);
-          const bad = st.results.filter((r) => r.errors.length).length;
-          showBar(`Done: ${st.results.length} characters${bad ? `, ${bad} with problems` : ""}. Open CardScraper to save.`, true);
-          break;
-        }
+        if (st.pos >= st.queue.length) { complete(st); break; }
         const target = st.queue[st.pos];
-        showBar(`${st.pos + 1}/${st.queue.length} · ${target.name || "character"}`);
+        showBar(`${st.pos + 1}/${st.queue.length} · ${target.name || "character"}${st.attempt ? " (retry)" : ""}`);
 
-        const page = await waitFor(() => (isEditPage() ? "edit" : isListPage() ? "list" : null), 20000);
+        const page = await waitFor(() => (isEditPage() ? "edit" : isListPage() ? "list" : null), 25000);
 
         if (page === "list") {
           const card = await findCardFor(target);
           if (!card) {
-            st.results.push({ ...target, btn: undefined, errors: ["Couldn't find this character in the list"] });
-            st.pos++;
-            save(st);
+            finish(st, { ...target, errors: ["Couldn't find this character in the list"] });
             continue;
           }
           card.btn.scrollIntoView({ block: "center" });
-          await sleep(200);
-          st.stage = "opening";
-          save(st);
+          await sleep(300);
           card.btn.click();
-          const ok = await waitFor(isEditPage, 15000);
-          if (!ok && card.href && !/^javascript:/i.test(card.href)) location.assign(card.href); // fallback: real navigation
+          const ok = await waitFor(isEditPage, 25000);
+          if (!ok) {
+            if (card.href && !/^javascript:/i.test(card.href)) { location.assign(card.href); break; } // real navigation; resumes after load
+            finish(load(), { ...target, errors: ["Page didn't load"] });
+          }
           continue;
         }
 
@@ -357,31 +389,41 @@
           try {
             rec = await scrapeEditPage(target);
           } catch (e) {
-            rec = { ...target, btn: undefined, errors: ["Error: " + (e?.message || e)] };
+            rec = { ...target, errors: ["Error: " + (e?.message || e)] };
           }
           const now = load();
           if (!now || now.status !== "running") break; // stopped meanwhile
-          now.results.push(rec);
-          now.pos++;
-          now.stage = "back";
-          save(now);
-          history.back();
-          const back = await waitFor(isListPage, 15000);
-          if (!back && now.listUrl) location.assign(now.listUrl);
-          await sleep(400);
+          finish(now, rec);
+          if (!(await backToList(now))) break;
           continue;
         }
 
-        // Neither page: give up on this one and try to return to the list.
-        st.results.push({ ...target, btn: undefined, errors: ["Page didn't load"] });
-        st.pos++;
-        save(st);
-        if (st.listUrl) location.assign(st.listUrl);
-        break;
+        // Neither page: count it, then get back to the list.
+        finish(st, { ...target, errors: ["Page didn't load"] });
+        if (st.listUrl) { location.assign(st.listUrl); break; }
       }
     } finally {
       driving = false;
     }
+  }
+
+  // Re-run only the given results (by position), replacing them when done.
+  function retry(indices) {
+    const st = load();
+    if (!st) return false;
+    const pick = new Set(indices);
+    const redo = st.results.filter((_, k) => pick.has(k));
+    if (!redo.length) return false;
+    st.kept = st.results.filter((_, k) => !pick.has(k));
+    st.queue = redo.map(({ i, name, href, thumb }) => ({ i, name, href, thumb }));
+    st.results = [];
+    st.pos = 0;
+    st.attempt = 0;
+    st.status = "running";
+    save(st);
+    if (!isListPage() && st.listUrl) { location.assign(st.listUrl); return true; }
+    drive();
+    return true;
   }
 
   async function start(status) {
@@ -433,6 +475,9 @@
         sendResponse(summary());
         return;
       }
+      case "batchRetry":
+        sendResponse({ ok: retry(msg.indices || []) });
+        return;
       case "batchResults":
         sendResponse(load());
         return;

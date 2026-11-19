@@ -72,6 +72,9 @@ async function loadResults(summary) {
   const remaining = (st?.queue?.length || 0) - (st?.pos || 0);
   $("batchResume").hidden = !(summary.status === "stopped" && remaining > 0);
   $("batchResume").textContent = `Resume (${remaining} left)`;
+  const failed = B.results.filter((r) => problems(r).length).length;
+  $("batchRetry").hidden = !failed || summary.status === "stopped" && remaining > 0;
+  $("batchRetry").textContent = `Retry ${failed} with problems`;
   renderResults();
 }
 
@@ -260,6 +263,11 @@ export function initBatch() {
   });
   $("batchStop").addEventListener("click", async () => { await send({ type: "batchStop" }); refreshBatch(); });
   $("batchResume").addEventListener("click", async () => { await send({ type: "batchResume" }); refreshBatch(); });
+  $("batchRetry").addEventListener("click", async () => {
+    const indices = B.results.filter((r) => problems(r).length).map((r) => r._i);
+    await send({ type: "batchRetry", indices });
+    refreshBatch();
+  });
   $("batchClear").addEventListener("click", async () => {
     if (!confirm("Clear these results? (They're not saved anywhere else.)")) return;
     await send({ type: "batchClear" });
