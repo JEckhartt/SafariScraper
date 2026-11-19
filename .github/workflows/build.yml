@@ -45,7 +45,7 @@ jobs:
           done
           plutil -p "$APPEX/Info.plist"
           CARD="$APP/PlugIns/CardScraperExtension.appex"
-          for f in manifest.json popup.html popup.js content.js png.js icon-128.png; do
+          for f in manifest.json popup.html popup.js content.js png.js batch.js batch-popup.js chat.js page.js zip.js icon-128.png; do
             test -f "$CARD/$f" || { echo "::error::missing $f in card appex"; exit 1; }
           done
 

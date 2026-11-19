@@ -354,6 +354,16 @@
     return true;
   }
 
+  // A page that never finished loading: go back to the list so the next
+  // attempt really re-opens the character.
+  async function leaveStuckPage(st) {
+    if (isListPage()) return true;
+    history.back();
+    if (await waitFor(isListPage, 15000)) { await sleep(PAUSE_MS); return true; }
+    if (st.listUrl) location.assign(st.listUrl);
+    return false; // a real load is coming; the next page resumes the run
+  }
+
   async function drive() {
     if (driving) return;
     driving = true;
@@ -378,8 +388,16 @@
           card.btn.click();
           const ok = await waitFor(isEditPage, 25000);
           if (!ok) {
-            if (card.href && !/^javascript:/i.test(card.href)) { location.assign(card.href); break; } // real navigation; resumes after load
-            finish(load(), { ...target, errors: ["Page didn't load"] });
+            const now = load();
+            // First failure on a real link: try a full page load of it.
+            if (!now.attempt && card.href && !/^javascript:/i.test(card.href)) {
+              now.attempt = 1;
+              save(now);
+              location.assign(card.href);
+              break; // resumes after the load
+            }
+            finish(now, { ...target, errors: ["Page didn't load"] });
+            if (!(await leaveStuckPage(now))) break;
           }
           continue;
         }
@@ -398,9 +416,9 @@
           continue;
         }
 
-        // Neither page: count it, then get back to the list.
+        // Neither page: count it (or retry it), then get back to the list.
         finish(st, { ...target, errors: ["Page didn't load"] });
-        if (st.listUrl) { location.assign(st.listUrl); break; }
+        if (!(await leaveStuckPage(st))) break;
       }
     } finally {
       driving = false;

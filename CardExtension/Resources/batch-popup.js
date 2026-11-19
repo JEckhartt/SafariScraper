@@ -1,3 +1,4 @@
+import { sendToPage } from "./page.js";
 // Batch tab: start/stop the in-page batch run, then review results
 // (deselect, see problems) and save cards as PNGs or one zip.
 import { buildCard, embedCard, isPng } from "./png.js";
@@ -13,18 +14,10 @@ function setStatus(text, isError = false) {
   $("status").classList.toggle("error", isError);
 }
 
-async function send(msg) {
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-  try {
-    return await api.tabs.sendMessage(tab.id, msg);
-  } catch {
-    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js", "batch.js"] });
-    return api.tabs.sendMessage(tab.id, msg);
-  }
-}
+const send = sendToPage;
 
 export async function probeBatch() {
-  try { return await send({ type: "batchProbe" }); } catch { return null; }
+  try { return await send({ type: "batchProbe" }); } catch (e) { return { error: e.message || String(e) }; }
 }
 
 function show(stateName) {
@@ -34,10 +27,11 @@ function show(stateName) {
 
 export async function refreshBatch() {
   const s = await probeBatch();
-  if (!s) {
+  if (!s || s.error) {
     show("batchIdle");
-    $("batchIdleText").textContent = "Couldn't reach the page. Reload it and try again.";
+    $("batchIdleText").textContent = "";
     $("batchStart").disabled = true;
+    setStatus(s?.error || "Couldn't reach the page.", true);
     return;
   }
   clearInterval(B.poll);

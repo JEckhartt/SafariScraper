@@ -1,3 +1,4 @@
+import { sendToPage } from "./page.js";
 // Chat tab: scrape the conversation on the page and export it as a
 // SillyTavern chat (.jsonl): one header line, then one line per message.
 //
@@ -167,15 +168,7 @@ function render() {
   if (unknown) setStatus(`${unknown} message${unknown > 1 ? "s have" : " has"} no speaker. Tap “? set speaker” on ${unknown > 1 ? "them" : "it"}.`, true);
 }
 
-async function send(msg) {
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-  try {
-    return await api.tabs.sendMessage(tab.id, msg);
-  } catch {
-    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js", "batch.js"] });
-    return api.tabs.sendMessage(tab.id, msg);
-  }
-}
+const send = sendToPage;
 
 export async function probeChat() {
   try { return (await send({ type: "chatProbe" }))?.chat; } catch { return false; }

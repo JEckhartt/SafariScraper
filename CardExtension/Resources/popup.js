@@ -1,6 +1,7 @@
 import { buildCard, embedCard, isPng } from "./png.js";
 import { initChat, loadChat, probeChat, chatFile, chatLoaded, debugFile } from "./chat.js";
 import { initBatch, probeBatch, refreshBatch } from "./batch-popup.js";
+import { sendToPage } from "./page.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
@@ -71,15 +72,7 @@ function renderThumbs() {
 
 async function scrape() {
   state.cardLoaded = true;
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-  state.tab = tab;
-  let res;
-  try {
-    res = await api.tabs.sendMessage(tab.id, { type: "card" });
-  } catch {
-    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js", "batch.js"] });
-    res = await api.tabs.sendMessage(tab.id, { type: "card" });
-  }
+  const res = await sendToPage({ type: "card" });
   if (!res) throw new Error("No response from page. Allow CardScraper on this site and reload.");
 
   state.url = res.url;
@@ -243,6 +236,7 @@ initBatch();
 (async () => {
   // A batch run (or a character list) opens on Batch; chat pages on Chat.
   const b = await probeBatch();
+  if (b?.error) { showTab("batch"); return; }
   if (b && (b.status || b.page === "list")) return showTab("batch");
   if (await probeChat()) return showTab("chat");
   await scrape();
