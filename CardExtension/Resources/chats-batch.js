@@ -58,6 +58,8 @@
 
   // ---------- "My Chats" page ----------
   const COUNT_RE = /^chats?:\s*(\d+)$/i;
+  const BADGE_RE = /^(un)?published$|^removed by moderators$|^deleted by creator$|^private$/i;
+  const TOTAL_RE = /^(\d[\d,]*)\s+chats?$/i;
   const DATE_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(,?\s+\d{4})?$/i;
 
   // Smallest elements whose text passes `test`, even when the text is split
@@ -86,11 +88,18 @@
   // Short cache: these scans run in polling loops.
   function cached(fn, ms = 120) {
     let at = 0, val;
-    return () => { const now = Date.now(); if (now - at > ms) { val = fn(); at = now; } return val; };
+    const get = () => { const now = Date.now(); if (now - at > ms) { val = fn(); at = now; } return val; };
+    get.fresh = () => { at = 0; return get(); }; // bypass the cache (page may have redrawn)
+    return get;
   }
 
   // Each character row under "All characters" shows "chats: N".
-  const charRows = cached(charRowsNow);
+  const charRows = cached(() => {
+    const rows = charRowsNow();
+    const seen = new Map();
+    for (const r of rows) { const n = seen.get(r.key) || 0; seen.set(r.key, n + 1); if (n) r.key += "#" + (n + 1); }
+    return rows;
+  });
   function charRowsNow() {
     const counts = leaves(document.body, (t) => COUNT_RE.test(t)).filter(visible);
     return counts.map((cEl) => {
@@ -101,9 +110,13 @@
         if (p.querySelector("[data-cs-entry]") || leaves(p, (t) => DATE_RE.test(t)).length) break; // don't swallow the chats list
         row = p;
       }
-      const name = leaves(row, (t) => /\p{L}/u.test(t) && !COUNT_RE.test(t) && !/^(un)?published$/i.test(t))[0];
+      const name = leaves(row, (t) => /\p{L}/u.test(t) && !COUNT_RE.test(t) && !BADGE_RE.test(t))[0];
+      const badge = leaves(row, (t) => BADGE_RE.test(t)).map((b) => clean(b.textContent)).join(",");
+      const avatar = row.querySelector("img")?.getAttribute("src") || "";
       const toggle = row.querySelector("[aria-expanded]") || row.querySelector("button:has(svg)") || row;
-      return { row, name: clean(name?.textContent), count: +clean(cEl.textContent).match(COUNT_RE)[1], toggle,
+      const count = +clean(cEl.textContent).match(COUNT_RE)[1];
+      const nm = clean(name?.textContent);
+      return { row, name: nm, count, toggle, key: `${nm}|${badge}|${count}|${avatar}`,
         expanded: toggle.getAttribute?.("aria-expanded") === "true" };
     });
   }
@@ -148,18 +161,20 @@
     return out;
   }
 
-  // Entries belonging to a row: after it in the page and before the next row.
-  function entriesFor(rowIdx) {
-    const rows = charRows();
-    const row = rows[rowIdx]?.row;
-    if (!row) return [];
-    const next = rows[rowIdx + 1]?.row;
-    return chatEntries().filter((en) => {
+  // Entries belonging to a row (by key): after it in the page, before the next row.
+  function entriesFor(key, fresh = false) {
+    const rows = fresh ? charRows.fresh() : charRows();
+    const i = rows.findIndex((r) => r.key === key);
+    if (i < 0) return [];
+    const row = rows[i].row;
+    const next = rows[i + 1]?.row;
+    return (fresh ? chatEntries.fresh() : chatEntries()).filter((en) => {
       const after = row.compareDocumentPosition(en.el) & Node.DOCUMENT_POSITION_FOLLOWING || row.contains(en.el);
       const before = !next || (en.el.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING);
       return after && before;
     });
   }
+  const rowByKey = (key) => charRows.fresh().find((r) => r.key === key) || null;
 
   function scroller() {
     let best = document.scrollingElement || document.documentElement, h = best.scrollHeight;
@@ -172,64 +187,118 @@
     return best;
   }
 
-  async function loadAllRows(status) {
-    let stable = 0, last = -1;
-    for (let i = 0; i < 60 && stable < 3; i++) {
-      const n = charRows().length;
-      status?.(`Loading characters… ${n}`);
-      const sc = scroller();
-      sc.scrollTop = sc.scrollHeight;
-      window.scrollTo(0, document.documentElement.scrollHeight);
-      await sleep(600);
-      stable = n === last ? stable + 1 : 0;
-      last = n;
+  const scrollPos = (sc) => (sc === document.scrollingElement || sc === document.documentElement ? window.scrollY : sc.scrollTop);
+  function toTop() { const sc = scroller(); sc.scrollTop = 0; window.scrollTo(0, 0); }
+  // One step down. At the bottom, nudge (up and back down, fire scroll events,
+  // press "Load more" if there is one) so lazy lists load their next batch.
+  // Returns false only when nothing more appears.
+  async function stepDown() {
+    const sc = scroller();
+    const before = scrollPos(sc), h0 = sc.scrollHeight, n0 = charRows().length;
+    sc.scrollTop += Math.floor(sc.clientHeight * 0.7);
+    if (sc !== document.scrollingElement) window.scrollBy(0, Math.floor(innerHeight * 0.7));
+    await sleep(700);
+    if (Math.abs(scrollPos(scroller()) - before) > 2) return true;
+
+    const more = [...document.querySelectorAll("button, a, [role=button]")]
+      .find((b) => /^(load|show|see|view) more$/i.test(clean(b.textContent)) && b.getClientRects().length);
+    if (more) { more.click(); await sleep(1500); }
+    for (let k = 0; k < 2; k++) {
+      sc.scrollTop -= 400; window.scrollBy(0, -400);
+      await sleep(250);
+      sc.scrollTop = sc.scrollHeight; window.scrollTo(0, document.documentElement.scrollHeight);
+      sc.dispatchEvent(new Event("scroll")); window.dispatchEvent(new Event("scroll"));
+      await sleep(1500);
+      if (scroller().scrollHeight > h0 + 2 || charRows().length !== n0) return true;
     }
-    scroller().scrollTop = 0;
-    window.scrollTo(0, 0);
+    return false;
   }
 
-  async function expand(rowIdx) {
-    const r = charRows()[rowIdx];
-    if (!r) return null;
-    if (!entriesFor(rowIdx).length) {
-      r.toggle.scrollIntoView({ block: "center" });
-      r.toggle.click();
+  function totalChats() {
+    const el = leaves(document.body, (t) => TOTAL_RE.test(t))[0];
+    return el ? +clean(el.textContent).match(TOTAL_RE)[1].replace(/,/g, "") : null;
+  }
+
+  // Expand a character row (by key). Always uses the live row (lists redraw
+  // while scrolling) and clicks again if nothing opened.
+  async function expand(key) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = rowByKey(key);
+      if (!r) return null;
+      if (!entriesFor(key, true).length) {
+        r.toggle.scrollIntoView({ block: "center" });
+        await sleep(250);
+        (rowByKey(key) || r).toggle.click();
+      }
+      let last = -1, stable = 0;
+      const ok = await waitFor(() => {
+        const n = entriesFor(key, true).length;
+        stable = n === last ? stable + 1 : 0;
+        last = n;
+        return (r.count && n >= r.count) || (n > 0 && stable >= 6);
+      }, attempt < 2 ? 4000 : 10000, 250);
+      if (ok) return rowByKey(key);
+      const again = rowByKey(key);
+      if (again && entriesFor(key, true).length === 0 && again.expanded) { again.toggle.click(); await sleep(400); }
     }
-    // Wait until all its chats are listed (or the count stops growing).
-    let last = -1, stable = 0;
-    await waitFor(() => {
-      const n = entriesFor(rowIdx).length;
-      stable = n === last ? stable + 1 : 0;
-      last = n;
-      return (r.count && n >= r.count) || (n > 0 && stable >= 6);
-    }, 12000, 250);
-    return charRows()[rowIdx];
+    return rowByKey(key);
   }
 
-  async function collapse(rowIdx) {
-    const r = charRows()[rowIdx];
-    if (r && entriesFor(rowIdx).length) { r.toggle.click(); await sleep(300); }
+  async function collapse(key) {
+    const r = rowByKey(key);
+    if (r && entriesFor(key, true).length) { r.toggle.click(); await sleep(300); }
   }
 
+  // Work down the page: handle every character as it appears, then scroll on.
+  // Copes with lists that only build the rows near the screen or load more
+  // as you scroll.
   async function indexAll(status) {
-    await loadAllRows(status);
+    toTop();
+    await sleep(600);
+    const done = new Set();
     const chats = [];
-    const rows = charRows();
-    for (let r = 0; r < rows.length; r++) {
-      const row = await expand(r);
-      if (!row) continue;
-      status?.(`Finding chats… ${row.name} (${r + 1}/${rows.length})`);
-      entriesFor(r).forEach((en, k) => {
-        chats.push({
-          id: `${r}:${k}:${en.date}:${en.personas.join("+")}:${en.count}`,
-          char: row.name, rowIdx: r, k,
+    const short = [];
+    let idle = 0;
+    for (let round = 0; round < 600 && idle < 4; round++) {
+      let progressed = false;
+      for (let guard = 0; guard < 200; guard++) {
+        await sleep(130);
+        const rows = charRows.fresh();
+        const idx = rows.findIndex((r) => !done.has(r.key));
+        if (idx < 0) break;
+        const r = rows[idx];
+        done.add(r.key);
+        progressed = true;
+        const label = r.name || `Character ${done.size}`;
+        status?.(`Finding chats… ${done.size} characters, ${chats.length} chats · ${label}`);
+        await expand(r.key);
+        const ents = entriesFor(r.key, true);
+        ents.forEach((en, k) => chats.push({
+          id: `${r.key}:${k}:${en.date}:${en.personas.join("+")}:${en.count}`,
+          char: label, rowKey: r.key, k,
           date: en.date, personas: en.personas, count: en.count, preview: en.preview, href: en.href,
-          expected: row.count,
-        });
-      });
-      await collapse(r);
+          expected: r.count,
+        }));
+        if (r.count && ents.length < r.count) short.push(`${label}: found ${ents.length} of ${r.count}`);
+        await collapse(r.key);
+      }
+      const moved = await stepDown();
+      idle = progressed || moved ? 0 : idle + 1;
     }
-    return chats;
+    toTop();
+    return { chats, characters: done.size, expected: totalChats(), short };
+  }
+
+  // Find a character row by key, scrolling down from the top if needed.
+  async function findRow(key) {
+    toTop();
+    await sleep(500);
+    for (let i = 0; i < 400; i++) {
+      await sleep(130);
+      if (rowByKey(key)) return true;
+      if (!(await stepDown())) { await sleep(400); return !!rowByKey(key); }
+    }
+    return false;
   }
 
   // ---------- chat page ----------
@@ -334,11 +403,11 @@
   }
 
   async function open(target) {
-    await loadAllRows();
-    const row = await expand(target.rowIdx);
-    if (!row || (target.char && row.name !== target.char)) return null;
-    const en = entriesFor(target.rowIdx).find((e) => e.date === target.date && e.personas.join("+") === target.personas.join("+") &&
-      (target.count == null || e.count === target.count)) || entriesFor(target.rowIdx)[target.k];
+    if (!(await findRow(target.rowKey))) return null;
+    await expand(target.rowKey);
+    const ents = entriesFor(target.rowKey, true);
+    const en = ents.find((e) => e.date === target.date && e.personas.join("+") === target.personas.join("+") &&
+      (target.count == null || e.count === target.count)) || ents[target.k];
     if (!en) return null;
     en.el.scrollIntoView({ block: "center" });
     await sleep(250);
@@ -444,11 +513,11 @@
         sendResponse(summary());
         return;
       case "chatsIndex":
-        indexAll((t) => showBar(t)).then(async (chats) => {
-          const st = { status: null, listUrl: location.href, index: chats, queue: [], pos: 0, results: [] };
+        indexAll((t) => showBar(t)).then(async (r) => {
+          const st = { status: null, listUrl: location.href, index: r.chats, indexInfo: { characters: r.characters, expected: r.expected, short: r.short }, queue: [], pos: 0, results: [] };
           save(st);
-          showBar(`Found ${chats.length} chats. Pick them in CardScraper.`, true);
-          sendResponse({ ok: true, chats });
+          showBar(`Found ${r.chats.length}${r.expected ? " of " + r.expected : ""} chats. Pick them in CardScraper.`, true);
+          sendResponse({ ok: true, ...r });
         }, (e) => sendResponse({ ok: false, error: String(e?.message || e) }));
         return true;
       case "chatsStart": {

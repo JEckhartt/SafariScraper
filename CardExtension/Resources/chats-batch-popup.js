@@ -53,6 +53,12 @@ export async function refreshChats(probe) {
 
 function renderPick(st) {
   C.index = st.index;
+  const info = st.indexInfo || {};
+  const notes = [];
+  if (info.expected && C.index.length < info.expected) notes.push(`My Chats says ${info.expected} chats; found ${C.index.length}.`);
+  for (const sh of info.short || []) notes.push(sh);
+  $("cbIndexNote").hidden = !notes.length;
+  $("cbIndexNote").textContent = notes.length ? "⚠ " + notes.join(" · ") + " Try “Start over” → “Find all chats” again, or send Claude a Debug file." : "";
   if (!C.pick.size) C.pick = new Set(C.index.map((c) => c.id));
   show("cbPick");
   const list = $("cbPickList");
@@ -230,7 +236,9 @@ export function initChatsBatch() {
     setStatus("Opening each character's chat list… (nothing is changed)");
     const r = await send({ type: "chatsIndex" });
     if (!r?.ok) { setStatus(r?.error || "Couldn't list the chats.", true); $("cbFind").disabled = false; return; }
-    setStatus(`Found ${r.chats.length} chats.`);
+    const miss = r.expected && r.chats.length < r.expected;
+    setStatus(`Found ${r.chats.length}${r.expected ? " of " + r.expected : ""} chats from ${r.characters} characters.` +
+      (miss ? " Some are missing, see the note above the list." : ""), !!miss);
     C.pick = new Set();
     refreshChats();
   });
