@@ -55,6 +55,17 @@ Open **My Characters** (each character has an **Edit** button), open CardScraper
 - When it finishes, the Batch tab lists every character with a thumbnail, what was found, and any problems (empty fields, no image, wrong page opened). Untick the ones you don't want, then **Save N cards** (separate PNGs) or **Zip** (one file).
 - Each card: name = Title; Chat name = nickname (V3 field); Bio → Creator's Notes; Personality → Description (toggle); alternate initial messages → alternate greetings. PNGs carry both V2 (`chara`) and V3 (`ccv3`) data.
 
+### Batch: all your JanitorAI chats
+
+Open **My Chats**, open CardScraper → **Batch → Find all chats**.
+
+- It expands each character under *All characters* and lists every chat (date, persona, message count, preview) without opening any.
+- Pick chats (per character or one by one), then **Export N chats**. It opens each chat, reads the whole history (only the swipe that's showing), and goes back.
+- Speakers come from each message's name label. The chat's persona chips (*as Joseph*, *as Wyatt 2*…) decide who is you, so nothing needs setting by hand. Chats with two personas keep both names.
+- Problems are flagged per chat: fewer messages than the list said, unknown speakers, chats that didn't open. **Retry N with problems** re-runs just those.
+- **Save N chats (.zip)** gives one folder per character with SillyTavern `.jsonl` files (`Date - as Persona (N msgs).jsonl`).
+- Read-only: it expands rows and opens chats, nothing else (never *Start new chat*, *Select*, edit or delete). Chat text is kept in the site's IndexedDB until you save or **Start over**. Big chats take minutes, so keep Safari open with the screen on.
+
 ### Chat export
 
 On a chat page CardScraper opens on its **Chat** tab (or tap **Chat** yourself).
