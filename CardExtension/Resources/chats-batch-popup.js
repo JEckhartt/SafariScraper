@@ -1,6 +1,6 @@
 // Batch chat export UI: find chats → pick → run → review → save zip of .jsonl.
 import { sendToPage } from "./page.js";
-import { buildJsonl } from "./chat.js";
+import { buildJsonl, debugFile } from "./chat.js";
 import { makeZip } from "./zip.js";
 
 const $ = (id) => document.getElementById(id);
@@ -43,9 +43,12 @@ export async function refreshChats(probe) {
   if (st?.index?.length) return renderPick(st);
   show("cbIdle");
   $("cbFind").disabled = s.page !== "chatslist";
+  $("cbDebug").hidden = !(s.myChats && s.page !== "chatslist");
   $("cbIdleText").textContent = s.page === "chatslist"
     ? `Found ${s.rows} characters. “Find all chats” opens each one's list of chats (nothing is opened yet).`
-    : "Open JanitorAI's “My Chats” page, then come back here.";
+    : s.myChats
+      ? `This is My Chats, but I can't make out the character rows (found ${s.countLabels} “chats:” labels). Scroll down to “All characters” and reopen CardScraper. If it still says this, tap Debug file and send it to Claude.`
+      : "Open JanitorAI's “My Chats” page, then come back here.";
 }
 
 function renderPick(st) {
@@ -215,6 +218,13 @@ async function deliver() {
 }
 
 export function initChatsBatch() {
+  $("cbDebug").addEventListener("click", async () => {
+    try {
+      const f = await debugFile();
+      if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f] });
+      else { const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); }
+    } catch (e) { if (e.name !== "AbortError") setStatus(e.message || String(e), true); }
+  });
   $("cbFind").addEventListener("click", async () => {
     $("cbFind").disabled = true;
     setStatus("Opening each character's chat list… (nothing is changed)");

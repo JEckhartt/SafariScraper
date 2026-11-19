@@ -814,8 +814,16 @@
     return lines.join("\n");
   }
 
+  // A chat page has somewhere to type a message; lists of chats/characters don't.
+  function hasComposer() {
+    return [...document.querySelectorAll("textarea, [contenteditable=true], [contenteditable='']")]
+      .some((el) => el.getClientRects().length && !el.closest("[role=dialog], .chakra-portal"));
+  }
+
   function chatLikely() {
     if (findHeadings().some((h) => h.hasTokens)) return false;
+    if (/\bmy chats\b/i.test(document.title + " " + (document.querySelector("h1")?.textContent || ""))) return false;
+    if (!hasComposer()) return false;
     const c = findChatContainer();
     return !!c && (/chat|conversation|messages?/i.test(location.pathname) || c.childElementCount >= 4);
   }

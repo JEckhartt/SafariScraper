@@ -29,7 +29,7 @@ function show(stateName) {
 // Character batch or chat batch, whichever this page / run is about.
 export async function refreshBatch() {
   const [s0, c] = await Promise.all([probeBatch(), probeChats()]);
-  const chatsMode = c && !c.error && !s0?.status && (c.status || c.indexed || c.page === "chatslist");
+  const chatsMode = c && !c.error && !s0?.status && (c.status || c.indexed || c.page === "chatslist" || c.myChats);
   $("charBatch").hidden = !!chatsMode;
   $("chatBatch").hidden = !chatsMode;
   if (chatsMode) {

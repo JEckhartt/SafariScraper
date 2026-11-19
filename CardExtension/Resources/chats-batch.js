@@ -60,18 +60,38 @@
   const COUNT_RE = /^chats?:\s*(\d+)$/i;
   const DATE_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(,?\s+\d{4})?$/i;
 
+  // Smallest elements whose text passes `test`, even when the text is split
+  // over several pieces ("chats:" + "3", "as" + "Joseph"): start at each text
+  // and widen up to 3 levels until the whole text matches.
   function leaves(root, test) {
-    const out = [];
-    for (const el of root.querySelectorAll("*")) {
-      if (el.childElementCount && [...el.children].some((c) => clean(c.textContent))) continue;
-      const t = clean(el.textContent);
-      if (t && test(t)) out.push(el);
+    const out = new Set();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.data.trim()) continue;
+      let el = n.parentElement;
+      for (let k = 0; k < 4 && el; k++) {
+        if (/^(SCRIPT|STYLE|NOSCRIPT)$/.test(el.tagName)) break;
+        const t = clean(el.textContent);
+        if (t.length > 300) break;
+        if (test(t)) { out.add(el); break; }
+        if (el === root) break;
+        el = el.parentElement;
+      }
     }
-    return out;
+    // keep the innermost ones only
+    const all = [...out];
+    return all.filter((el) => !all.some((o) => o !== el && el.contains(o)));
+  }
+
+  // Short cache: these scans run in polling loops.
+  function cached(fn, ms = 120) {
+    let at = 0, val;
+    return () => { const now = Date.now(); if (now - at > ms) { val = fn(); at = now; } return val; };
   }
 
   // Each character row under "All characters" shows "chats: N".
-  function charRows() {
+  const charRows = cached(charRowsNow);
+  function charRowsNow() {
     const counts = leaves(document.body, (t) => COUNT_RE.test(t)).filter(visible);
     return counts.map((cEl) => {
       let row = cEl;
@@ -89,11 +109,13 @@
   }
 
   function isChatsList() { return charRows().length > 0; }
+  const titled = () => /\bmy chats\b/i.test(document.title + " " + (document.querySelector("h1")?.textContent || ""));
 
+  const chatEntries = cached(chatEntriesNow);
   // Chat entries: the smallest block holding a date, an "as Persona" chip and
   // a preview. (Smallest, so a character with one chat doesn't swallow its
   // "Start new chat" / "View character" links.)
-  function chatEntries() {
+  function chatEntriesNow() {
     const out = [];
     const seen = new Set();
     const has = (el, test) => leaves(el, test).length > 0;
@@ -406,6 +428,8 @@
     return {
       page: isChatsList() ? "chatslist" : "other",
       rows: charRows().length,
+      myChats: titled(),
+      countLabels: leaves(document.body, (t) => /chats?\s*:/i.test(t)).length,
       status: st?.status || null,
       indexed: !!st?.index,
       pos: st?.pos || 0,

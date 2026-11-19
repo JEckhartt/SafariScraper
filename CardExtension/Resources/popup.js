@@ -242,7 +242,7 @@ initBatch();
   const c = await probeChats();
   // A chat export in progress (or the My Chats page) always opens on Batch,
   // so the Chat tab never starts scrolling a chat the batch is reading.
-  if (c && !c.error && (c.status || c.indexed || c.page === "chatslist")) return showTab("batch");
+  if (c && !c.error && (c.status || c.indexed || c.page === "chatslist" || c.myChats)) return showTab("batch");
   if (await probeChat()) return showTab("chat");
   await scrape();
 })().catch((e) => setStatus(e.message || String(e), true));
