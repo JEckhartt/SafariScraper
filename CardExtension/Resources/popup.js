@@ -1,5 +1,6 @@
 import { buildCard, embedCard, isPng } from "./png.js";
 import { initChat, loadChat, probeChat, chatFile, chatLoaded, debugFile } from "./chat.js";
+import { initBatch, probeBatch, refreshBatch } from "./batch-popup.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
@@ -32,8 +33,11 @@ function showTab(name) {
   for (const b of document.querySelectorAll(".tabs button")) b.classList.toggle("on", b.dataset.tab === name);
   $("cardView").hidden = $("cardActions").hidden = name !== "card";
   $("chatView").hidden = $("chatActions").hidden = name !== "chat";
+  $("batchView").hidden = name !== "batch";
+  if (name !== "batch") $("batchActions").hidden = true;
   invalidate();
   setStatus("");
+  if (name === "batch") refreshBatch();
   if (name === "chat" && !chatLoaded()) loadChat();
   if (name === "card" && !state.cardLoaded) scrape().catch((e) => setStatus(e.message || String(e), true));
 }
@@ -73,7 +77,7 @@ async function scrape() {
   try {
     res = await api.tabs.sendMessage(tab.id, { type: "card" });
   } catch {
-    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js", "batch.js"] });
     res = await api.tabs.sendMessage(tab.id, { type: "card" });
   }
   if (!res) throw new Error("No response from page. Allow CardScraper on this site and reload.");
@@ -234,9 +238,12 @@ $("saveChat").addEventListener("click", () => deliver("chat", "saveChat", async 
 $("debugChat").addEventListener("click", () => deliver("debug", "debugChat", debugFile));
 for (const b of document.querySelectorAll(".tabs button")) b.addEventListener("click", () => showTab(b.dataset.tab));
 initChat();
+initBatch();
 
 (async () => {
-  // Chat pages open straight on the Chat tab.
+  // A batch run (or a character list) opens on Batch; chat pages on Chat.
+  const b = await probeBatch();
+  if (b && (b.status || b.page === "list")) return showTab("batch");
   if (await probeChat()) return showTab("chat");
   await scrape();
 })().catch((e) => setStatus(e.message || String(e), true));

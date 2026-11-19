@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CardScraper",
-  "description": "Saves a character page as a Tavern card PNG: the main image with scenario, personality, first message and example dialogs embedded.",
+  "description": "Saves character pages as Tavern card PNGs (one at a time or your whole JanitorAI list) and exports chats as SillyTavern .jsonl.",
   "version": "1.0",
   "icons": {
     "48": "icon-48.png",
@@ -12,8 +12,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js",
+        "batch.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -25,6 +30,12 @@
       "48": "icon-48.png"
     }
   },
-  "permissions": ["activeTab", "tabs", "scripting"],
-  "host_permissions": ["<all_urls>"]
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
 }

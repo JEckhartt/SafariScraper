@@ -172,7 +172,7 @@ async function send(msg) {
   try {
     return await api.tabs.sendMessage(tab.id, msg);
   } catch {
-    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js", "batch.js"] });
     return api.tabs.sendMessage(tab.id, msg);
   }
 }

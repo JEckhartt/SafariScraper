@@ -70,7 +70,10 @@ export function embedCard(pngBytes, card) {
   if (!iend) throw new Error("Corrupt PNG (no IEND)");
 
   const json = new TextEncoder().encode(JSON.stringify(card));
-  keep.push(textChunk("chara", base64(json)), iend);
+  keep.push(textChunk("chara", base64(json)));
+  // V3 copy as well (SillyTavern prefers it; it carries the nickname).
+  const v3 = new TextEncoder().encode(JSON.stringify(toV3(card)));
+  keep.push(textChunk("ccv3", base64(v3)), iend);
 
   const total = keep.reduce((n, p) => n + p.length, 0);
   const out = new Uint8Array(total);
@@ -79,7 +82,23 @@ export function embedCard(pngBytes, card) {
   return out;
 }
 
-export function buildCard({ name, description, personality, scenario, first_mes, mes_example, creator_notes, source }) {
+export function toV3(card) {
+  const d = card.data;
+  return {
+    spec: "chara_card_v3",
+    spec_version: "3.0",
+    data: {
+      ...d,
+      nickname: d.nickname || undefined,
+      group_only_greetings: [],
+      source: d.extensions?.source_url ? [d.extensions.source_url] : [],
+      creation_date: Math.floor(Date.now() / 1000),
+      modification_date: Math.floor(Date.now() / 1000),
+    },
+  };
+}
+
+export function buildCard({ name, nickname, description, personality, scenario, first_mes, alternate_greetings, mes_example, creator_notes, source, extra }) {
   const data = {
     name: name || "Character",
     description: description || "",
@@ -90,12 +109,13 @@ export function buildCard({ name, description, personality, scenario, first_mes,
     creator_notes: creator_notes || "",
     system_prompt: "",
     post_history_instructions: "",
-    alternate_greetings: [],
+    alternate_greetings: alternate_greetings || [],
     tags: [],
     creator: "",
     character_version: "",
-    extensions: source ? { source_url: source } : {},
+    extensions: { ...(source ? { source_url: source } : {}), ...(extra || {}) },
   };
+  if (nickname) data.nickname = nickname;
   return {
     // V1 fields at the top level for older importers.
     name: data.name,

@@ -10,6 +10,7 @@
   <nav class="tabs" role="tablist">
     <button type="button" role="tab" data-tab="card" class="on">Card</button>
     <button type="button" role="tab" data-tab="chat">Chat</button>
+    <button type="button" role="tab" data-tab="batch">Batch</button>
   </nav>
 
   <main id="cardView">
@@ -62,11 +63,41 @@
     <ol id="chatList" class="chat"></ol>
   </main>
 
+  <main id="batchView" hidden>
+    <div id="batchIdle">
+      <p id="batchIdleText" class="muted"></p>
+      <label class="check"><input type="checkbox" id="batchPersAsDesc" checked> Store Personality as Description (what SillyTavern uses as the main definition)</label>
+      <button id="batchStart" type="button" class="primary wide">Scrape all characters</button>
+      <p class="muted small-note">It only clicks Edit, the General/Definition tabs and Back. It never deletes or changes anything.</p>
+    </div>
+    <div id="batchRunning" hidden>
+      <p id="batchRunText"></p>
+      <progress id="batchProgress" value="0" max="1"></progress>
+      <button id="batchStop" type="button" class="wide">Stop</button>
+    </div>
+    <div id="batchResults" hidden>
+      <div class="row chat-tools">
+        <span id="batchSummary" class="muted"></span>
+        <button id="batchAll" type="button" class="small">All</button>
+        <button id="batchNone" type="button" class="small">None</button>
+      </div>
+      <div class="row chat-tools">
+        <button id="batchResume" type="button" class="small" hidden>Resume</button>
+        <button id="batchClear" type="button" class="small">Clear results</button>
+      </div>
+      <ul id="batchList" class="batch"></ul>
+    </div>
+  </main>
+
   <footer>
     <div id="status" aria-live="polite"></div>
     <div class="row" id="cardActions">
       <button id="savePng" class="primary">Save card PNG</button>
       <button id="saveJson">JSON</button>
+    </div>
+    <div class="row" id="batchActions" hidden>
+      <button id="batchSave" class="primary">Save cards</button>
+      <button id="batchZip">Zip</button>
     </div>
     <div class="row" id="chatActions" hidden>
       <button id="saveChat" class="primary" disabled>Save chat (.jsonl)</button>

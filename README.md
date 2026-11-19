@@ -45,6 +45,16 @@ Open a character page → extensions menu → **CardScraper**.
 
 Save it with **Save to Files**, not Photos: Photos can strip the embedded text.
 
+### Batch: your whole JanitorAI character list
+
+Open **My Characters** (each character has an **Edit** button), open CardScraper and choose **Batch → Scrape all characters**.
+
+- It scrolls until the whole list has loaded, then for each character it clicks **Edit**, reads the **General** tab (image, Title, Chat name, Bio) and the **Definition** tab (Personality, Scenario, initial message from *Write* plus any alternate initial messages, Example dialogs), and goes **Back** to the list.
+- **Read-only:** it only clicks Edit, the two tabs, the initial-message chips and Back. It never clicks Delete, "+" or Update character, and never types into a field.
+- A pill at the top of the page shows progress and has a **Stop** button. You can close the popup while it runs. Progress is kept in the tab, so page loads don't interrupt it.
+- When it finishes, the Batch tab lists every character with a thumbnail, what was found, and any problems (empty fields, no image, wrong page opened). Untick the ones you don't want, then **Save N cards** (separate PNGs) or **Zip** (one file).
+- Each card: name = Title; Chat name = nickname (V3 field); Bio → Creator's Notes; Personality → Description (toggle); alternate initial messages → alternate greetings. PNGs carry both V2 (`chara`) and V3 (`ccv3`) data.
+
 ### Chat export
 
 On a chat page CardScraper opens on its **Chat** tab (or tap **Chat** yourself).

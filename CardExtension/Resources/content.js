@@ -817,6 +817,9 @@
     return !!c && (/chat|conversation|messages?/i.test(location.pathname) || c.childElementCount >= 4);
   }
 
+  // Shared with batch.js (same isolated world).
+  globalThis.__cardScraperLib = { clean, tidy, toMarkdown };
+
   api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "chat") {
       scrapeChat(!!msg.loadAll).then(sendResponse, (e) => sendResponse({ messages: [], error: String(e?.message || e) }));
