@@ -27,7 +27,7 @@ export async function sendToPage(msg) {
   // Content script missing (tab opened before access was granted): inject it.
   let injectErr = null;
   try {
-    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js", "batch.js"] });
+    await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js", "batch.js", "chats-batch.js"] });
   } catch (e) {
     injectErr = e;
   }

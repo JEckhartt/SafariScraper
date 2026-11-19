@@ -64,6 +64,7 @@
   </main>
 
   <main id="batchView" hidden>
+   <div id="charBatch">
     <div id="batchIdle">
       <p id="batchIdleText" class="muted"></p>
       <label class="check"><input type="checkbox" id="batchPersAsDesc" checked> Store Personality as Description (what SillyTavern uses as the main definition)</label>
@@ -88,6 +89,38 @@
       </div>
       <ul id="batchList" class="batch"></ul>
     </div>
+   </div>
+   <div id="chatBatch" hidden>
+    <div id="cbIdle">
+      <p id="cbIdleText" class="muted"></p>
+      <button id="cbFind" type="button" class="primary wide">Find all chats</button>
+      <p class="muted small-note">Read-only: it expands characters and opens chats, nothing else. It never starts, edits or deletes a chat.</p>
+    </div>
+    <div id="cbPick" hidden>
+      <div class="row chat-tools">
+        <span id="cbPickSummary" class="muted"></span>
+        <button id="cbAll" type="button" class="small">All</button>
+        <button id="cbNone" type="button" class="small">None</button>
+      </div>
+      <p class="muted small-note">Big chats take a few minutes each. Keep Safari open with the screen on while it runs.</p>
+      <ul id="cbPickList" class="batch cb"></ul>
+    </div>
+    <div id="cbRunning" hidden>
+      <p id="cbRunText"></p>
+      <progress id="cbProgress" value="0" max="1"></progress>
+      <button id="cbStop" type="button" class="wide">Stop</button>
+    </div>
+    <div id="cbResults" hidden>
+      <div class="row chat-tools"><span id="cbResultSummary" class="muted"></span></div>
+      <label class="check"><input type="checkbox" id="cbMarkdown" checked> Keep formatting as Markdown (*actions*)</label>
+      <div class="row chat-tools">
+        <button id="cbResume" type="button" class="small" hidden>Resume</button>
+        <button id="cbRetry" type="button" class="small" hidden>Retry</button>
+      </div>
+      <ul id="cbResultList" class="batch"></ul>
+    </div>
+    <div class="row chat-tools"><button id="cbReindex" type="button" class="small">Start over</button></div>
+   </div>
   </main>
 
   <footer>
@@ -99,6 +132,10 @@
     <div class="row" id="batchActions" hidden>
       <button id="batchSave" class="primary">Save cards</button>
       <button id="batchZip">Zip</button>
+    </div>
+    <div class="row" id="chatBatchActions" hidden>
+      <button id="cbStart" class="primary">Export chats</button>
+      <button id="cbSave" class="primary" hidden>Save chats</button>
     </div>
     <div class="row" id="chatActions" hidden>
       <button id="saveChat" class="primary" disabled>Save chat (.jsonl)</button>

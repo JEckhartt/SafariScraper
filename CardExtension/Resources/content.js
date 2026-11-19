@@ -603,7 +603,10 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  const progress = (text) => { try { api.runtime.sendMessage({ type: "chatProgress", text }); } catch {} };
+  const progress = (text) => {
+    try { globalThis.__cardScraperOnProgress?.(text); } catch {}
+    try { api.runtime.sendMessage({ type: "chatProgress", text })?.catch?.(() => {}); } catch {}
+  };
   const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   function scrollModel(scroller) {
@@ -818,7 +821,7 @@
   }
 
   // Shared with batch.js (same isolated world).
-  globalThis.__cardScraperLib = { clean, tidy, toMarkdown };
+  globalThis.__cardScraperLib = { clean, tidy, toMarkdown, findChatContainer, scrapeChat };
 
   api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "chat") {

@@ -1,6 +1,7 @@
 import { buildCard, embedCard, isPng } from "./png.js";
 import { initChat, loadChat, probeChat, chatFile, chatLoaded, debugFile } from "./chat.js";
 import { initBatch, probeBatch, refreshBatch } from "./batch-popup.js";
+import { probeChats } from "./chats-batch-popup.js";
 import { sendToPage } from "./page.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
@@ -35,7 +36,7 @@ function showTab(name) {
   $("cardView").hidden = $("cardActions").hidden = name !== "card";
   $("chatView").hidden = $("chatActions").hidden = name !== "chat";
   $("batchView").hidden = name !== "batch";
-  if (name !== "batch") $("batchActions").hidden = true;
+  if (name !== "batch") $("batchActions").hidden = $("chatBatchActions").hidden = true;
   invalidate();
   setStatus("");
   if (name === "batch") refreshBatch();
@@ -238,6 +239,10 @@ initBatch();
   const b = await probeBatch();
   if (b?.error) { showTab("batch"); return; }
   if (b && (b.status || b.page === "list")) return showTab("batch");
+  const c = await probeChats();
+  // A chat export in progress (or the My Chats page) always opens on Batch,
+  // so the Chat tab never starts scrolling a chat the batch is reading.
+  if (c && !c.error && (c.status || c.indexed || c.page === "chatslist")) return showTab("batch");
   if (await probeChat()) return showTab("chat");
   await scrape();
 })().catch((e) => setStatus(e.message || String(e), true));

@@ -3,6 +3,7 @@ import { sendToPage } from "./page.js";
 // (deselect, see problems) and save cards as PNGs or one zip.
 import { buildCard, embedCard, isPng } from "./png.js";
 import { makeZip } from "./zip.js";
+import { probeChats, refreshChats, initChatsBatch } from "./chats-batch-popup.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
@@ -25,8 +26,22 @@ function show(stateName) {
   $("batchActions").hidden = stateName !== "batchResults";
 }
 
+// Character batch or chat batch, whichever this page / run is about.
 export async function refreshBatch() {
-  const s = await probeBatch();
+  const [s0, c] = await Promise.all([probeBatch(), probeChats()]);
+  const chatsMode = c && !c.error && !s0?.status && (c.status || c.indexed || c.page === "chatslist");
+  $("charBatch").hidden = !!chatsMode;
+  $("chatBatch").hidden = !chatsMode;
+  if (chatsMode) {
+    $("batchActions").hidden = true;
+    return refreshChats(c);
+  }
+  $("chatBatchActions").hidden = true;
+  return refreshCharBatch(s0);
+}
+
+async function refreshCharBatch(s0) {
+  const s = s0 ?? (await probeBatch());
   if (!s || s.error) {
     show("batchIdle");
     $("batchIdleText").textContent = "";
@@ -41,7 +56,7 @@ export async function refreshBatch() {
     $("batchProgress").value = s.pos;
     $("batchRunText").textContent = `Scraping ${Math.min(s.pos + 1, s.total)}/${s.total}${s.current ? " · " + s.current : ""}`;
     setStatus("You can close this. The page keeps going; reopen CardScraper when it says Done.");
-    B.poll = setInterval(refreshBatch, 1200);
+    B.poll = setInterval(() => refreshCharBatch(), 1200);
     return;
   }
   if (s.status === "done" || s.status === "stopped") {
@@ -243,6 +258,7 @@ async function deliver(kind, buttonId, makeFiles) {
 }
 
 export function initBatch() {
+  initChatsBatch();
   $("batchStart").addEventListener("click", async () => {
     $("batchStart").disabled = true;
     setStatus("Loading the whole list…");

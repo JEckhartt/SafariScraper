@@ -17,7 +17,8 @@
       ],
       "js": [
         "content.js",
-        "batch.js"
+        "batch.js",
+        "chats-batch.js"
       ],
       "run_at": "document_idle"
     }

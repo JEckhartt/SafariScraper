@@ -117,3 +117,9 @@ button.wide { width: 100%; margin-top: 12px; padding: 12px; }
 .btitle { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bsub { color: var(--muted); font-size: 12px; }
 .berr { color: #ff9f0a; font-size: 12px; margin-top: 2px; }
+
+.cb .cb-head label { display: flex; gap: 8px; align-items: center; font-weight: 700; padding: 8px 4px 2px; }
+.cb .cb-head input, .cb .cb-item input { width: auto; flex: none; }
+.cb .cb-item label { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border-radius: 10px; padding: 8px; font-size: 13px; }
+.cb .cb-item .bsub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#cbProgress { width: 100%; }
